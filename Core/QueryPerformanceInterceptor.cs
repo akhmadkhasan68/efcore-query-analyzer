@@ -10,15 +10,15 @@ using System.Xml;
 namespace EFCore.QueryAnalyzer.Core
 {
     /// <summary>
-    /// Enhanced interceptor that captures SQL Server execution plans
+    /// Enhanced interceptor that captures query performance metrics and queues them for background processing
     /// </summary>
     public sealed class QueryPerformanceInterceptor(
         ILogger<QueryPerformanceInterceptor> logger,
-        IQueryReportingService reportingService,
+        QueryAnalysisQueue queue,
         QueryAnalyzerOptions options) : DbCommandInterceptor
     {
         private readonly ILogger<QueryPerformanceInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        private readonly IQueryReportingService _reportingService = reportingService ?? throw new ArgumentNullException(nameof(reportingService));
+        private readonly QueryAnalysisQueue _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         private readonly QueryAnalyzerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
         private readonly ConcurrentDictionary<Guid, QueryTrackingContext> _activeQueries = new();
 
@@ -110,7 +110,7 @@ namespace EFCore.QueryAnalyzer.Core
             }
         }
 
-        private async Task EndQueryTrackingAsync(DbCommand command, CommandExecutedEventData eventData, CancellationToken cancellationToken)
+        private Task EndQueryTrackingAsync(DbCommand command, CommandExecutedEventData eventData, CancellationToken cancellationToken)
         {
             try
             {
@@ -121,7 +121,7 @@ namespace EFCore.QueryAnalyzer.Core
                 if (matchingContext == null)
                 {
                     _logger.LogTrace("No matching tracking context found for connection {ConnectionId}", eventData.ConnectionId);
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 _activeQueries.TryRemove(matchingContext.QueryId, out _);
@@ -141,264 +141,22 @@ namespace EFCore.QueryAnalyzer.Core
                         _options.ThresholdMilliseconds,
                         TruncateForLog(matchingContext.CommandText, 200));
 
-                    // Capture execution plan for slow queries
-                    if (_options.CaptureExecutionPlan)
-                    {
-                        matchingContext.ExecutionPlan = await CaptureSqlServerExecutionPlanAsync(matchingContext, cancellationToken);
-                    }
-
-                    await _reportingService.ReportSlowQueryAsync(matchingContext, cancellationToken);
+                    // Enqueue for background processing - this is ultra-fast and non-blocking
+                    // The background service will handle execution plan capture and reporting
+                    _queue.Enqueue(matchingContext);
+                    
+                    _logger.LogTrace("Queued slow query for background processing: {QueryId}", matchingContext.QueryId);
                 }
+
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error completing query tracking for connection {ConnectionId}", eventData.ConnectionId);
+                return Task.CompletedTask;
             }
         }
 
-        private async Task<QueryTrackingContextExecutionPlan?> CaptureSqlServerExecutionPlanAsync(QueryTrackingContext context, CancellationToken cancellationToken)
-        {
-            try
-            {
-                // Method 1: Try to reuse the existing connection (preferred)
-                if (context.Connection?.State == System.Data.ConnectionState.Open)
-                {
-                    return await CaptureExecutionPlanUsingExistingConnection(context.Connection, context, cancellationToken);
-                }
-
-                // Method 2: Get connection string from DbContext
-                var connectionStringFromContext = GetConnectionStringFromContext(context);
-                if (!string.IsNullOrEmpty(connectionStringFromContext))
-                {
-                    return await CaptureExecutionPlanUsingNewConnection(connectionStringFromContext, context, cancellationToken);
-                }
-
-                // Method 3: Try to extract from configuration (fallback)
-                var connectionStringFromConfiguration = GetConnectionStringFromConfiguration(context);
-                if (!string.IsNullOrEmpty(connectionStringFromConfiguration))
-                {
-                    return await CaptureExecutionPlanUsingNewConnection(connectionStringFromConfiguration, context, cancellationToken);
-                }
-
-                _logger.LogWarning("Cannot capture execution plan: No valid connection string available for query {QueryId}", context.QueryId);
-
-                return null;
-
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error capturing SQL Server execution plan for query {QueryId}", context.QueryId);
-
-                return null;
-            }
-        }
-
-        private async Task<QueryTrackingContextExecutionPlan?> CaptureExecutionPlanUsingExistingConnection(DbConnection connection, QueryTrackingContext context, CancellationToken cancellationToken)
-        {
-            try
-            {
-                _logger.LogDebug("Capturing execution plan using existing connection for query {QueryId}", context.QueryId);
-
-                using var command = connection.CreateCommand();
-                command.CommandTimeout = _options.ExecutionPlanTimeoutSeconds;
-
-                // Get estimated execution plan using existing connection
-                command.CommandText = "SET SHOWPLAN_XML ON";
-                await command.ExecuteNonQueryAsync(cancellationToken);
-
-                try
-                {
-                    // Execute the query to get execution plan
-                    command.CommandText = BuildParameterizedQuery(context.CommandText, context.Parameters);
-
-                    using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    if (await reader.ReadAsync(cancellationToken))
-                    {
-                        var executionPlanXml = reader.GetString(0);
-                        return FormatExecutionPlan(executionPlanXml, DatabaseProvider.SqlServer);
-                    }
-
-                    return null;
-                }
-                finally
-                {
-                    try
-                    {
-                        // Always turn off SHOWPLAN_XML
-                        if (connection.State == System.Data.ConnectionState.Open)
-                        {
-                            command.CommandText = "SET SHOWPLAN_XML OFF";
-                            await command.ExecuteNonQueryAsync(cancellationToken);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to turn off SHOWPLAN_XML");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error capturing execution plan using existing connection");
-
-                return null;
-            }
-        }
-
-        private async Task<QueryTrackingContextExecutionPlan?> CaptureExecutionPlanUsingNewConnection(string connectionString, QueryTrackingContext context, CancellationToken cancellationToken)
-        {
-            try
-            {
-                _logger.LogDebug("Capturing execution plan using new connection for query {QueryId}", context.QueryId);
-
-                // Create new connection with the full connection string
-                using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
-                await connection.OpenAsync(cancellationToken);
-
-                using var command = connection.CreateCommand();
-                command.CommandTimeout = _options.ExecutionPlanTimeoutSeconds;
-
-                // Get estimated execution plan
-                command.CommandText = "SET SHOWPLAN_XML ON";
-                await command.ExecuteNonQueryAsync(cancellationToken);
-
-                try
-                {
-                    // Execute the query to get execution plan
-                    command.CommandText = BuildParameterizedQuery(context.CommandText, context.Parameters);
-
-                    using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    if (await reader.ReadAsync(cancellationToken))
-                    {
-                        var executionPlanXml = reader.GetString(0);
-                        return FormatExecutionPlan(executionPlanXml, DatabaseProvider.SqlServer);
-                    }
-
-                    return null;
-                }
-                finally
-                {
-                    try
-                    {
-                        // Always turn off SHOWPLAN_XML
-                        if (connection.State == System.Data.ConnectionState.Open)
-                        {
-                            command.CommandText = "SET SHOWPLAN_XML OFF";
-                            await command.ExecuteNonQueryAsync(cancellationToken);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to turn off SHOWPLAN_XML on new connection");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error capturing execution plan using new connection");
-                return null;
-            }
-        }
-
-        private string? GetConnectionStringFromContext(QueryTrackingContext context)
-        {
-            try
-            {
-                if (context.DbContext == null)
-                    return null;
-
-                // Method 1: Try to get from Database.GetConnectionString() (EF Core 6+)
-                var database = context.DbContext.Database;
-
-                // Use reflection to access GetConnectionString method
-                var getConnectionStringMethod = database.GetType().GetMethod("GetConnectionString");
-                if (getConnectionStringMethod != null)
-                {
-                    var connectionString = getConnectionStringMethod.Invoke(database, null) as string;
-                    if (!string.IsNullOrEmpty(connectionString))
-                    {
-                        _logger.LogDebug("Retrieved connection string from DbContext.Database.GetConnectionString()");
-                        return connectionString;
-                    }
-                }
-
-                // Method 2: Try to get from Database.GetDbConnection()
-                using var dbConnection = database.GetDbConnection();
-                if (!string.IsNullOrEmpty(dbConnection.ConnectionString))
-                {
-                    _logger.LogDebug("Retrieved connection string from DbContext.Database.GetDbConnection()");
-                    return dbConnection.ConnectionString;
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error getting connection string from DbContext");
-                return null;
-            }
-        }
-
-        private string? GetConnectionStringFromConfiguration(QueryTrackingContext context)
-        {
-            try
-            {
-                // This is a fallback - you might want to implement this based on your configuration
-                // For now, return null to indicate this method is not implemented
-                _logger.LogDebug("Configuration-based connection string retrieval not implemented");
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error getting connection string from configuration");
-                return null;
-            }
-        }
-        private static string BuildParameterizedQuery(string query, Dictionary<string, object?> parameters)
-        {
-            var result = query;
-            foreach (var param in parameters)
-            {
-                var value = param.Value switch
-                {
-                    null => "NULL",
-                    string s => $"'{s.Replace("'", "''")}'",
-                    DateTime dt => $"'{dt:yyyy-MM-dd HH:mm:ss}'",
-                    bool b => b ? "1" : "0",
-                    decimal d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    _ => param.Value.ToString()
-                };
-
-                result = result.Replace(param.Key, value);
-            }
-            return result;
-        }
-
-        private QueryTrackingContextExecutionPlan? FormatExecutionPlan(string? rawPlan, DatabaseProvider provider)
-        {
-            if (string.IsNullOrEmpty(rawPlan))
-                return null;
-
-            try
-            {
-                return new QueryTrackingContextExecutionPlan
-                {
-                    DatabaseProvider = provider,
-                    PlanFormat = ExecutionPlanFormatType.Xml,
-                    Content = rawPlan
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error formatting execution plan");
-
-                return null;
-            }
-        }
 
         private Dictionary<string, object?> ExtractParameters(DbCommand command)
         {

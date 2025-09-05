@@ -161,11 +161,15 @@ namespace EFCore.QueryAnalyzer.Extensions
                 services.TryAddTransient<IQueryReportingService, HttpQueryReportingService>();
             }
 
-            // Register the interceptor with service provider injection
+            // Register built-in queue components
+            services.TryAddSingleton<QueryAnalysisQueue>();
+            services.AddHostedService<QueryAnalysisBackgroundService>();
+
+            // Register the interceptor with queue injection instead of reporting service
             services.TryAddTransient(provider =>
                 new QueryPerformanceInterceptor(
                     provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
-                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalysisQueue>(),
                     provider.GetRequiredService<QueryAnalyzerOptions>()
                 )
             );
@@ -244,11 +248,15 @@ namespace EFCore.QueryAnalyzer.Extensions
                 services.AddTransient<IQueryReportingService, HttpQueryReportingService>();
             }
 
+            // Register queue components for inline configuration
+            services.AddSingleton<QueryAnalysisQueue>();
+            services.AddHostedService<QueryAnalysisBackgroundService>();
+
             services.AddSingleton(options);
             services.AddTransient(provider =>
                 new QueryPerformanceInterceptor(
                     provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
-                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalysisQueue>(),
                     provider.GetRequiredService<QueryAnalyzerOptions>()
                 )
             );
@@ -336,11 +344,15 @@ namespace EFCore.QueryAnalyzer.Extensions
                 services.AddTransient<IQueryReportingService, HttpQueryReportingService>();
             }
 
+            // Register queue components for inline configuration
+            services.AddSingleton<QueryAnalysisQueue>();
+            services.AddHostedService<QueryAnalysisBackgroundService>();
+
             services.AddSingleton(options);
             services.AddTransient(provider =>
                 new QueryPerformanceInterceptor(
                     provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
-                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalysisQueue>(),
                     provider.GetRequiredService<QueryAnalyzerOptions>()
                 )
             );

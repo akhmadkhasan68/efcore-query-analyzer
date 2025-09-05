@@ -26,6 +26,11 @@ namespace EFCore.QueryAnalyzer.Core.Models
         public bool CaptureExecutionPlan { get; set; } = false;
 
         /// <summary>
+        /// Connection string to use for execution plan capture 
+        /// </summary>s
+        public string? ConnectionString { get; set; }
+
+        /// <summary>
         /// Timeout in seconds for execution plan capture (default: 30)
         /// </summary>
         public int ExecutionPlanTimeoutSeconds { get; set; } = 30;
