@@ -154,9 +154,6 @@ namespace EFCore.QueryAnalyzer.Extensions
             services.TryAddTransient(provider =>
                 provider.GetRequiredService<IOptions<QueryAnalyzerOptions>>().Value);
 
-            // Register SQL Server statistics parser
-            // services.TryAddTransient<SqlServerStatisticsParser>();
-
             // Register default HTTP reporting service if not already registered
             if (registerDefaultReportingService)
             {
@@ -236,7 +233,6 @@ namespace EFCore.QueryAnalyzer.Extensions
             // Create a minimal service provider for the interceptor
             var services = new ServiceCollection();
             services.AddLogging();
-            // services.AddTransient<SqlServerStatisticsParser>();
 
             if (reportingService != null)
             {
@@ -329,7 +325,6 @@ namespace EFCore.QueryAnalyzer.Extensions
             // Create a minimal service provider for the interceptor
             var services = new ServiceCollection();
             services.AddLogging();
-            // services.AddTransient<SqlServerStatisticsParser>();
 
             if (reportingService != null)
             {

@@ -1,41 +1,48 @@
-# EF Core Query Analyzer
+# EFCore.QueryAnalyzer
 
-A high-performance, production-ready NuGet package for monitoring Entity Framework Core query performance and automatically reporting slow queries to your analytics platform.
+A high-performance, production-ready NuGet package for monitoring Entity Framework Core query performance with automatic slow query detection, execution plan analysis, and flexible reporting capabilities.
 
-## Features
+![NuGet Version](https://img.shields.io/nuget/v/EFCore.QueryAnalyzer)
+![NuGet Downloads](https://img.shields.io/nuget/dt/EFCore.QueryAnalyzer)
+![.NET](https://img.shields.io/badge/.NET-6%2B-blue)
+![EF Core](https://img.shields.io/badge/EF%20Core-6%2B-green)
 
-- 🚀 **Zero-configuration** startup with sensible defaults
-- 📊 **Real-time monitoring** of all EF Core queries
-- 🎯 **Configurable thresholds** for slow query detection
-- 🔍 **Stack trace capture** to identify problematic code
-- 🌐 **HTTP API integration** for centralized monitoring
-- 🏗️ **Multiple reporting strategies** (HTTP, In-Memory, Custom, Composite)
-- 🔧 **Environment-aware** configuration (Dev/Prod)
-- ⚡ **Minimal performance overhead**
-- 🧪 **Built-in testing support**
-- 📈 **SQL Server execution plan analysis** with detailed performance metrics
-- 🗄️ **Multi-database support** (SQL Server, PostgreSQL, MySQL, Oracle, SQLite)
-- 🔬 **Advanced query statistics** (row counts, CPU time, I/O metrics, parallelism)
-- 🚨 **Missing index detection** and optimization recommendations
-- 📋 **Query categorization** and table dependency analysis
-- ⚖️ **Query cost analysis** with costliest operation identification
+## 🚀 Features
 
-## Quick Start
+- **🔍 Real-time Query Monitoring** - Automatically tracks all EF Core queries with minimal overhead
+- **📊 Execution Plan Analysis** - Captures and analyzes SQL Server execution plans for performance insights
+- **🎯 Configurable Thresholds** - Set custom slow query detection thresholds per environment
+- **🌐 Multiple Reporting Strategies** - HTTP API, In-Memory, File, and Custom reporting services
+- **🔧 Environment-aware Configuration** - Different settings for Development vs Production
+- **🧵 Thread-safe Operation** - Concurrent query tracking using `ConcurrentDictionary`
+- **🔍 Stack Trace Capture** - Identify problematic code locations with filtered stack traces
+- **🗄️ Multi-database Support** - Works with SQL Server, PostgreSQL, MySQL, Oracle, and SQLite
+- **⚡ Minimal Performance Impact** - Designed for production environments with optimized overhead
 
-### 1. Install the Package
+## 📦 Installation
+
+Install the package via NuGet Package Manager:
 
 ```bash
 dotnet add package EFCore.QueryAnalyzer
 ```
 
-### 2. Configure in Program.cs
+Or via Package Manager Console:
+
+```powershell
+Install-Package EFCore.QueryAnalyzer
+```
+
+## 🚀 Quick Start
+
+### 1. Basic Setup with Dependency Injection
 
 ```csharp
 using EFCore.QueryAnalyzer.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add the query analyzer
+// Add the query analyzer with configuration
 builder.Services.AddEFCoreQueryAnalyzer(builder.Configuration);
 
 // Configure your DbContext with the analyzer
@@ -48,136 +55,54 @@ builder.Services.AddDbContext<MyDbContext>((serviceProvider, options) =>
 var app = builder.Build();
 ```
 
-### 3. Configure in appsettings.json
+### 2. Configuration in appsettings.json
 
 ```json
 {
   "QueryAnalyzer": {
     "ThresholdMilliseconds": 1000,
-    "ApiEndpoint": "https://your-monitoring-platform.com/api/slow-queries",
+    "ApiEndpoint": "https://your-monitoring-api.com/slow-queries",
     "ApiKey": "your-secret-api-key",
     "CaptureStackTrace": true,
+    "CaptureExecutionPlan": true,
     "EnableInDevelopment": true,
     "EnableInProduction": false
   }
 }
 ```
 
-That's it! The analyzer will now automatically monitor your queries and report slow ones to your API.
+That's it! The analyzer will now monitor your queries and report slow ones automatically.
 
-## Query Analysis Features
-
-### 🔍 Execution Plan Analysis
-The analyzer automatically captures and parses SQL Server execution plans to provide deep insights into query performance:
-
-- **Row Count Analysis**: Compare estimated vs. actual row counts to identify cardinality estimation issues
-- **I/O Metrics**: Track logical reads, physical reads, and page reads for storage performance analysis
-- **CPU Utilization**: Monitor CPU time vs. elapsed time to identify processing bottlenecks
-- **Parallelism Detection**: Identify parallel query execution and degree of parallelism
-- **Cost Analysis**: Determine query cost and identify the most expensive operations
-
-### 🗄️ Multi-Database Support
-Supports execution plan capture and analysis across multiple database providers:
-
-```csharp
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.DatabaseProvider = DatabaseProvider.SqlServer; // or Auto for detection
-    options.CaptureExecutionPlan = true;
-});
-```
-
-**Supported Providers:**
-- **SQL Server**: Full execution plan analysis with detailed statistics
-- **PostgreSQL**: Query plan capture and basic analysis
-- **MySQL**: Performance metrics and query categorization  
-- **Oracle**: Execution plan parsing and cost analysis
-- **SQLite**: Query analysis with limited execution plan support
-- **Auto**: Automatic provider detection based on connection string
-
-### 🚨 Performance Optimization Insights
-
-#### Missing Index Detection
-```json
-{
-  "statistics": {
-    "missingIndexes": [
-      "CREATE INDEX IX_Users_Email ON Users (Email) INCLUDE (FirstName, LastName)",
-      "CREATE INDEX IX_Orders_CustomerId_Date ON Orders (CustomerId, OrderDate)"
-    ]
-  }
-}
-```
-
-#### Query Warnings
-```json
-{
-  "statistics": {
-    "warnings": [
-      "CONVERT_ISSUE: Implicit conversion on Email column affecting performance",
-      "CARDINALITY_ESTIMATE: Row count estimation may be inaccurate"
-    ]
-  }
-}
-```
-
-#### Performance Metrics
-```json
-{
-  "statistics": {
-    "estimatedRows": 100,
-    "actualRows": 50000,
-    "cpuTimeMs": 1250.5,
-    "elapsedTimeMs": 2100.8,
-    "logicalReads": 15432,
-    "physicalReads": 234,
-    "hasParallelism": true,
-    "degreeOfParallelism": 4,
-    "estimatedCost": 45.67,
-    "costliestOperation": "Clustered Index Scan on Users"
-  }
-}
-```
-
-## Configuration Options
+## ⚙️ Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `ThresholdMilliseconds` | `double` | `1000` | Threshold in ms for considering a query as slow |
+| `ThresholdMilliseconds` | `double` | `1000` | Threshold in milliseconds for slow query detection |
 | `IsEnabled` | `bool` | `true` | Whether the analyzer is enabled |
-| `CaptureStackTrace` | `bool` | `true` | Whether to capture stack traces for slow queries |
+| `CaptureStackTrace` | `bool` | `true` | Capture stack traces for slow queries |
+| `CaptureExecutionPlan` | `bool` | `false` | Capture database execution plans |
 | `MaxStackTraceLines` | `int` | `10` | Maximum lines in captured stack traces |
-| `MaxQueryLength` | `int` | `10000` | Maximum length of query text to store |
+| `MaxQueryLength` | `int` | `10000` | Maximum query text length to store |
 | `ApiEndpoint` | `string?` | `null` | HTTP endpoint for reporting slow queries |
 | `ApiKey` | `string?` | `null` | API key for authentication |
-| `ApiTimeoutMs` | `int` | `5000` | Timeout for API calls in milliseconds |
-| `EnableInDevelopment` | `bool` | `true` | Enable reporting in development environment |
-| `EnableInProduction` | `bool` | `false` | Enable reporting in production environment |
-| `CaptureExecutionPlan` | `bool` | `true` | Whether to capture database execution plans for analysis |
-| `DatabaseProvider` | `DatabaseProvider` | `Auto` | Database provider type (Auto, SqlServer, PostgreSQL, MySQL, Oracle, SQLite) |
+| `ApiTimeoutMs` | `int` | `5000` | API request timeout in milliseconds |
+| `EnableInDevelopment` | `bool` | `true` | Enable reporting in development |
+| `EnableInProduction` | `bool` | `false` | Enable reporting in production |
+| `DatabaseProvider` | `DatabaseProvider` | `Auto` | Database provider for execution plans |
+| `ExecutionPlanTimeoutSeconds` | `int` | `30` | Timeout for execution plan capture |
 
-## Usage Scenarios
+## 📋 Usage Scenarios
 
-### 1. Basic Configuration
-
-```csharp
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.ThresholdMilliseconds = 500;
-    options.ApiEndpoint = "https://your-api.com/slow-queries";
-    options.ApiKey = "your-api-key";
-});
-```
-
-### 2. HTTP Reporting with Custom Client
+### 1. HTTP API Reporting (Production)
 
 ```csharp
 builder.Services.AddEFCoreQueryAnalyzerWithHttp(
     options =>
     {
-        options.ThresholdMilliseconds = 750;
+        options.ThresholdMilliseconds = 500;
         options.ApiEndpoint = "https://monitoring.company.com/api/queries";
         options.ApiKey = builder.Configuration["MonitoringApiKey"];
+        options.EnableInProduction = true;
     },
     httpClient =>
     {
@@ -186,37 +111,41 @@ builder.Services.AddEFCoreQueryAnalyzerWithHttp(
     });
 ```
 
-### 3. In-Memory Reporting (Testing)
+### 2. In-Memory Reporting (Testing/Development)
 
 ```csharp
 builder.Services.AddEFCoreQueryAnalyzerWithInMemory(options =>
 {
     options.ThresholdMilliseconds = 100;
     options.CaptureStackTrace = true;
+    options.CaptureExecutionPlan = true;
 });
+
+// In tests, access the reports
+var reportingService = serviceProvider.GetService<IQueryReportingService>() 
+    as InMemoryQueryReportingService;
+var reports = reportingService?.GetReports();
 ```
 
-### 4. Custom Reporting Service
+### 3. Custom Reporting Service
 
 ```csharp
-public class MyCustomReportingService : IQueryReportingService
+public class DatabaseReportingService : IQueryReportingService
 {
-    public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken)
+    public async Task ReportSlowQueryAsync(QueryTrackingContext context, 
+        CancellationToken cancellationToken = default)
     {
-        // Send to your preferred destination:
-        // - Database, File System, Message Queue, etc.
-        await SendToMyDestination(context);
+        // Store in database, send to message queue, etc.
+        await SaveToDatabase(context);
     }
 }
 
-// Register it
-builder.Services.AddEFCoreQueryAnalyzerWithCustomReporting<MyCustomReportingService>(options =>
-{
-    options.ThresholdMilliseconds = 500;
-});
+// Register custom service
+builder.Services.AddEFCoreQueryAnalyzerWithCustomReporting<DatabaseReportingService>(
+    options => options.ThresholdMilliseconds = 750);
 ```
 
-### 5. Inline Configuration (No DI)
+### 4. Inline Configuration (No DI)
 
 ```csharp
 var options = new DbContextOptionsBuilder<MyDbContext>()
@@ -224,21 +153,21 @@ var options = new DbContextOptionsBuilder<MyDbContext>()
     .AddQueryAnalyzer(analyzerOptions =>
     {
         analyzerOptions.ThresholdMilliseconds = 500;
-        analyzerOptions.ApiEndpoint = "https://your-api.com/slow-queries";
+        analyzerOptions.CaptureExecutionPlan = true;
     })
     .Options;
 
 using var context = new MyDbContext(options);
 ```
 
-## Report Format
+## 📊 Report Format
 
-When a slow query is detected, the following comprehensive JSON is sent to your API endpoint:
+When a slow query is detected, a comprehensive JSON report is generated:
 
 ```json
 {
   "queryId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "rawQuery": "SELECT u.Id, u.Email, u.FirstName, u.LastName FROM Users u WHERE u.Email LIKE @p0 ORDER BY u.LastName",
+  "rawQuery": "SELECT u.Id, u.Email FROM Users u WHERE u.Email LIKE @p0",
   "parameters": {
     "@p0": "%john%"
   },
@@ -247,230 +176,117 @@ When a slow query is detected, the following comprehensive JSON is sent to your 
     "at MyApp.Controllers.UserController.GetUsers() in UserController.cs:line 45",
     "at MyApp.Services.UserService.FindByEmail() in UserService.cs:line 23"
   ],
-  "timestamp": "2025-09-03T10:30:00Z",
+  "timestamp": "2024-01-15T10:30:00Z",
   "contextType": "MyApp.Data.ApplicationDbContext",
   "environment": "Development",
   "applicationName": "MyApplication",
   "version": "1.0.0",
-  
-  // New execution plan analysis fields
-  "executionPlan": "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\">...</ShowPlanXML>",
-  "databaseProvider": "SqlServer",
-  "queryCategory": "SELECT",
-  "tableNames": ["Users"],
-  
-  // Detailed performance statistics
-  "statistics": {
-    "estimatedRows": 150,
-    "actualRows": 42,
-    "cpuTimeMs": 890.2,
-    "elapsedTimeMs": 1250.5,
-    "logicalReads": 2847,
-    "physicalReads": 45,
-    "pageReads": 45,
-    "hasParallelism": false,
-    "degreeOfParallelism": null,
-    "estimatedCost": 12.34,
-    "costliestOperation": "Index Seek on IX_Users_Email",
-    
-    // Performance optimization recommendations
-    "missingIndexes": [
-      "CREATE NONCLUSTERED INDEX [IX_Users_Email_LastName] ON [dbo].[Users] ([Email]) INCLUDE ([FirstName], [LastName])"
-    ],
-    "warnings": [
-      "CARDINALITY_ESTIMATE: Estimated rows (150) significantly differ from actual rows (42)"
-    ]
+  "executionPlan": {
+    "databaseProvider": "SqlServer",
+    "planFormat": {
+      "contentType": "application/xml",
+      "fileExtension": ".sqlplan",
+      "description": "SQL Server XML Execution Plan"
+    },
+    "content": "<ShowPlanXML xmlns=\"...\">...</ShowPlanXML>"
   }
 }
 ```
 
-### Field Descriptions
+## 🔍 Execution Plan Analysis
 
-**Basic Fields:**
-- `queryId`: Unique identifier for the query execution
-- `rawQuery`: The actual SQL query that was executed
-- `parameters`: Parameter values passed to the query
-- `executionTimeMs`: Total execution time in milliseconds
-- `stackTrace`: Code location where the slow query originated
+The analyzer can capture and analyze database execution plans for deep performance insights:
 
-**Analysis Fields:**
-- `executionPlan`: Raw XML execution plan (SQL Server) or JSON plan (PostgreSQL)
-- `databaseProvider`: Detected database provider
-- `queryCategory`: Query type (SELECT, INSERT, UPDATE, DELETE)
-- `tableNames`: List of tables accessed by the query
-
-**Performance Statistics:**
-- `estimatedRows` vs `actualRows`: Query optimizer estimates vs reality
-- `cpuTimeMs`: CPU processing time vs total elapsed time
-- `logicalReads`: Pages read from buffer cache
-- `physicalReads`: Pages read from disk storage
-- `hasParallelism`: Whether query used parallel execution
-- `estimatedCost`: Query optimizer's cost estimation
-- `costliestOperation`: Most expensive operation in the execution plan
-- `missingIndexes`: Recommended indexes to improve performance
-- `warnings`: Performance warnings and optimization hints
-
-## Environment Configuration
-
-The package automatically detects the environment and applies the appropriate settings:
-
-- **Development**: Reporting enabled by default, detailed stack traces
-- **Production**: Reporting disabled by default for safety
-- **Testing**: Use in-memory reporting for unit tests
-
-## Best Practices
-
-### 1. Production Safety
-```csharp
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.EnableInProduction = builder.Environment.IsProduction() && 
-                                builder.Configuration.GetValue<bool>("EnableQueryAnalyzer");
-    options.ThresholdMilliseconds = builder.Environment.IsProduction() ? 2000 : 500;
-});
-```
-
-### 2. Conditional Registration
-```csharp
-if (builder.Configuration.GetValue<bool>("Features:QueryAnalyzer"))
-{
-    builder.Services.AddEFCoreQueryAnalyzer(builder.Configuration);
-}
-```
-
-### 3. Testing Setup
-```csharp
-// In your test setup
-services.AddEFCoreQueryAnalyzerWithInMemory();
-
-// In your tests
-var reportingService = serviceProvider.GetService<IQueryReportingService>() as InMemoryQueryReportingService;
-var reports = reportingService?.GetReports();
-Assert.True(reports.Any(r => r.ExecutionTimeMs > expectedThreshold));
-```
-
-## Advanced Scenarios
-
-### Composite Reporting Service
-
-Use the built-in `CompositeQueryReportingService` to send reports to multiple destinations simultaneously:
+### SQL Server Support
 
 ```csharp
-// Register multiple reporting services
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.ThresholdMilliseconds = 500;
-});
-
-// Add individual reporting services
-builder.Services.AddHttpClient<HttpQueryReportingService>();
-builder.Services.AddTransient<IQueryReportingService, HttpQueryReportingService>();
-builder.Services.AddTransient<IQueryReportingService, InMemoryQueryReportingService>();
-
-// The composite service will automatically use all registered IQueryReportingService instances
-builder.Services.AddTransient<CompositeQueryReportingService>();
-```
-
-### Custom Analysis with Performance Statistics
-
-```csharp
-public class PerformanceAnalysisService : IQueryReportingService
-{
-    public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken)
-    {
-        var statistics = context.Statistics;
-        if (statistics == null) return;
-
-        // Analyze cardinality estimation issues
-        if (statistics.EstimatedRows.HasValue && statistics.ActualRows.HasValue)
-        {
-            var estimationRatio = (double)statistics.ActualRows.Value / statistics.EstimatedRows.Value;
-            if (estimationRatio > 10 || estimationRatio < 0.1)
-            {
-                await AlertCardinalityIssue(context, estimationRatio);
-            }
-        }
-
-        // Detect I/O intensive queries
-        if (statistics.PhysicalReads > 1000)
-        {
-            await AlertHighPhysicalReads(context);
-        }
-
-        // Check for missing indexes
-        if (statistics.MissingIndexes?.Any() == true)
-        {
-            await RecommendIndexes(context, statistics.MissingIndexes);
-        }
-
-        // Analyze parallelism efficiency
-        if (statistics.HasParallelism && statistics.CpuTimeMs.HasValue && statistics.ElapsedTimeMs.HasValue)
-        {
-            var parallelismEfficiency = statistics.CpuTimeMs.Value / statistics.ElapsedTimeMs.Value;
-            if (parallelismEfficiency < 2) // Low parallel efficiency
-            {
-                await AlertParallelismInefficiency(context, parallelismEfficiency);
-            }
-        }
-    }
-}
-```
-
-### Database-Specific Configuration
-
-```csharp
-// SQL Server with detailed analysis
 builder.Services.AddEFCoreQueryAnalyzer(options =>
 {
     options.DatabaseProvider = DatabaseProvider.SqlServer;
     options.CaptureExecutionPlan = true;
-    options.ThresholdMilliseconds = 1000;
-});
-
-// PostgreSQL with query plan capture
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.DatabaseProvider = DatabaseProvider.PostgreSQL;
-    options.CaptureExecutionPlan = true;
-    options.ThresholdMilliseconds = 800;
-});
-
-// Multi-database environment with auto-detection
-builder.Services.AddEFCoreQueryAnalyzer(options =>
-{
-    options.DatabaseProvider = DatabaseProvider.Auto;
-    options.CaptureExecutionPlan = true;
+    options.ExecutionPlanTimeoutSeconds = 30;
 });
 ```
 
-### Multiple Reporting Destinations
+### Multi-Database Support
 
 ```csharp
-public class MultiDestinationReportingService : IQueryReportingService
+// Auto-detect database provider
+options.DatabaseProvider = DatabaseProvider.Auto;
+
+// Or specify explicitly
+options.DatabaseProvider = DatabaseProvider.PostgreSQL; // MySQL, Oracle, SQLite
+```
+
+## 🌍 Environment Configuration
+
+The analyzer automatically detects environments and applies appropriate settings:
+
+### Development Environment
+- Reporting enabled by default
+- Lower thresholds for early detection
+- Detailed stack traces captured
+- Execution plan analysis enabled
+
+### Production Environment
+- Reporting disabled by default for safety
+- Higher thresholds to reduce noise
+- Minimal overhead configuration
+- Optional stack trace capture
+
+### Environment-specific Configuration
+
+```csharp
+builder.Services.AddEFCoreQueryAnalyzer(options =>
 {
-    private readonly ILogger _logger;
-    private readonly HttpClient _httpClient;
-    private readonly IMessageQueue _messageQueue;
-
-    public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken)
+    if (builder.Environment.IsDevelopment())
     {
-        // Send to multiple destinations in parallel
-        await Task.WhenAll(
-            SendToApi(context),
-            SendToQueue(context),
-            LogToFile(context),
-            AnalyzePerformance(context) // New analysis method
-        );
+        options.ThresholdMilliseconds = 100;
+        options.CaptureStackTrace = true;
+        options.CaptureExecutionPlan = true;
     }
-
-    private async Task AnalyzePerformance(QueryTrackingContext context)
+    else
     {
-        if (context.Statistics?.MissingIndexes?.Any() == true)
-        {
-            await NotifyDBA(context);
-        }
+        options.ThresholdMilliseconds = 2000;
+        options.CaptureStackTrace = false;
+        options.EnableInProduction = builder.Configuration
+            .GetValue<bool>("EnableQueryAnalyzerInProduction");
     }
-}
+});
+```
+
+## 🏗️ Architecture Overview
+
+### Core Components
+
+1. **QueryPerformanceInterceptor** - EF Core interceptor that hooks into query execution
+2. **IQueryReportingService** - Interface for pluggable reporting strategies
+3. **QueryTrackingContext** - Thread-safe context for tracking individual queries
+4. **ServiceCollectionExtensions** - DI registration and configuration helpers
+
+### Thread Safety
+
+- Uses `ConcurrentDictionary<Guid, QueryTrackingContext>` for active query tracking
+- Non-blocking interceptor design prevents impact on query execution
+- Async reporting to avoid blocking the main execution thread
+
+### Memory Management
+
+- Automatic cleanup of completed query contexts
+- Configurable limits on query text length and stack trace depth
+- Efficient correlation of query start/end events using ConnectionId + CommandId
+
+## 🔧 Advanced Usage
+
+### Composite Reporting
+
+Send reports to multiple destinations simultaneously:
+
+```csharp
+builder.Services.AddEFCoreQueryAnalyzer(options => { });
+builder.Services.AddHttpClient<HttpQueryReportingService>();
+builder.Services.AddTransient<IQueryReportingService, HttpQueryReportingService>();
+builder.Services.AddTransient<IQueryReportingService, InMemoryQueryReportingService>();
 ```
 
 ### Conditional Reporting
@@ -478,16 +294,18 @@ public class MultiDestinationReportingService : IQueryReportingService
 ```csharp
 public class SmartReportingService : IQueryReportingService
 {
-    public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken)
+    public async Task ReportSlowQueryAsync(QueryTrackingContext context, 
+        CancellationToken cancellationToken)
     {
-        // Only report queries from specific contexts
+        // Only report critical context queries
         if (context.ContextType.Contains("CriticalDbContext"))
         {
             await _urgentReporter.ReportAsync(context);
         }
         
-        // Different thresholds for different operations
-        if (context.CommandText.Contains("SELECT") && context.ExecutionTime.TotalSeconds > 5)
+        // Different handling for different query types
+        if (context.CommandText.Contains("SELECT") && 
+            context.ExecutionTime.TotalSeconds > 5)
         {
             await _selectQueryReporter.ReportAsync(context);
         }
@@ -495,188 +313,111 @@ public class SmartReportingService : IQueryReportingService
 }
 ```
 
-## Performance Optimization Guide
-
-### 🔍 Understanding Query Statistics
-
-The query analyzer provides detailed metrics to help you identify and resolve performance bottlenecks:
-
-#### Cardinality Estimation Issues
-```csharp
-// Red flag: Large discrepancy between estimated and actual rows
-if (statistics.EstimatedRows == 100 && statistics.ActualRows == 50000)
-{
-    // Indicates outdated statistics or poor query plan
-    // Solution: UPDATE STATISTICS, consider query hints, or rewrite query
-}
-```
-
-#### I/O Performance Analysis  
-```csharp
-// High physical reads indicate disk I/O bottleneck
-if (statistics.PhysicalReads > statistics.LogicalReads * 0.1)
-{
-    // Solutions: Add missing indexes, increase buffer cache, or optimize storage
-}
-
-// High logical reads may indicate inefficient query plans
-if (statistics.LogicalReads > statistics.ActualRows * 10)
-{
-    // Solutions: Add covering indexes or rewrite query logic
-}
-```
-
-#### CPU vs I/O Bound Analysis
-```csharp
-var cpuRatio = statistics.CpuTimeMs / statistics.ElapsedTimeMs;
-
-if (cpuRatio > 0.8)
-{
-    // CPU-bound query: Focus on query logic optimization
-}
-else if (cpuRatio < 0.3)  
-{
-    // I/O-bound query: Focus on index optimization
-}
-```
-
-### 🚨 Automated Performance Alerts
-
-Create intelligent alerting based on execution statistics:
+### Performance Analysis
 
 ```csharp
-public class PerformanceAlertService : IQueryReportingService
+public class PerformanceAnalysisService : IQueryReportingService
 {
-    public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken)
+    public async Task ReportSlowQueryAsync(QueryTrackingContext context, 
+        CancellationToken cancellationToken)
     {
-        var alerts = new List<string>();
-        
-        // Critical performance issues
-        if (context.Statistics?.ActualRows > context.Statistics?.EstimatedRows * 100)
+        // Analyze execution plan if available
+        if (context.ExecutionPlan?.Content != null)
         {
-            alerts.Add("CRITICAL: Severe cardinality estimation error detected");
+            var analysis = await AnalyzeExecutionPlan(context.ExecutionPlan);
+            await RecommendOptimizations(context, analysis);
         }
         
-        if (context.Statistics?.PhysicalReads > 10000)
+        // Pattern-based analysis
+        if (context.CommandText.Contains("SELECT *"))
         {
-            alerts.Add("WARNING: Excessive disk I/O detected");
+            await AlertSelectStarUsage(context);
         }
-        
-        if (context.Statistics?.MissingIndexes?.Any() == true)
-        {
-            alerts.Add($"RECOMMENDATION: {context.Statistics.MissingIndexes.Length} missing indexes detected");
-        }
-        
-        // Send alerts to monitoring system
-        await SendAlertsToMonitoring(context, alerts);
     }
 }
 ```
 
-### 📋 Index Optimization Workflow
+## 🚨 Best Practices
 
-1. **Identify Missing Indexes**: Use the `MissingIndexes` array from query statistics
-2. **Analyze Impact**: Check `EstimatedCost` reduction potential
-3. **Validate Recommendations**: Test indexes on non-production environments
-4. **Monitor Results**: Compare before/after performance metrics
-
-```sql
--- Example of implementing recommended indexes
-CREATE NONCLUSTERED INDEX [IX_Users_Email_LastName] 
-ON [dbo].[Users] ([Email]) 
-INCLUDE ([FirstName], [LastName]);
-
--- Monitor improvement
-SELECT 
-    logical_reads_before,
-    logical_reads_after,
-    (logical_reads_before - logical_reads_after) * 100.0 / logical_reads_before AS improvement_percent
-FROM performance_comparison;
-```
-
-### 🔄 Query Optimization Patterns
-
-#### Pattern 1: High Logical Reads with Low Row Count
-```sql
--- Problem: Index scan instead of seek
-SELECT * FROM Orders WHERE CustomerId = @CustomerId
-
--- Solution: Ensure proper indexing
-CREATE INDEX IX_Orders_CustomerId ON Orders (CustomerId)
-```
-
-#### Pattern 2: Parallelism with Low Efficiency  
-```sql
--- Problem: Small result set with parallel execution overhead
-SELECT TOP 10 * FROM LargeTable ORDER BY Date DESC
-
--- Solution: Use appropriate hints or rewrite query
-SELECT TOP 10 * FROM LargeTable WITH (INDEX(IX_Date_DESC)) ORDER BY Date DESC
-```
-
-### 📊 Performance Monitoring Dashboard
-
-Create a monitoring dashboard using the captured statistics:
+### 1. Production Safety
 
 ```csharp
-public class PerformanceDashboard
+// Safe production configuration
+builder.Services.AddEFCoreQueryAnalyzer(options =>
 {
-    public async Task<DashboardData> GetPerformanceMetrics(TimeSpan period)
-    {
-        var reports = await GetReportsFromPeriod(period);
-        
-        return new DashboardData
-        {
-            AverageExecutionTime = reports.Average(r => r.ExecutionTimeMs),
-            QueriesWithCardinalityIssues = reports.Count(r => HasCardinalityIssue(r.Statistics)),
-            TopIOIntensiveQueries = reports.OrderByDescending(r => r.Statistics?.LogicalReads).Take(10),
-            MostRecommendedIndexes = GetMostRecommendedIndexes(reports),
-            DatabaseProviderBreakdown = reports.GroupBy(r => r.DatabaseProvider)
-        };
-    }
-}
+    options.EnableInProduction = builder.Environment.IsProduction() && 
+                               builder.Configuration.GetValue<bool>("Features:QueryAnalyzer");
+    options.ThresholdMilliseconds = builder.Environment.IsProduction() ? 2000 : 500;
+    options.CaptureStackTrace = !builder.Environment.IsProduction();
+});
 ```
 
-## Troubleshooting
+### 2. Resource Management
+
+```csharp
+options.MaxQueryLength = 5000;          // Limit memory usage
+options.MaxStackTraceLines = 5;         // Reduce overhead
+options.ExecutionPlanTimeoutSeconds = 15; // Prevent hanging
+```
+
+### 3. Environment Detection
+
+```csharp
+// Use environment-specific settings
+options.EnableInDevelopment = true;   // Debug in development
+options.EnableInProduction = false;   // Opt-in for production
+```
+
+### 4. Testing Integration
+
+```csharp
+// Test setup
+services.AddEFCoreQueryAnalyzerWithInMemory(options =>
+{
+    options.ThresholdMilliseconds = 1; // Capture all queries in tests
+});
+
+// Test assertions
+var reports = inMemoryReporter.GetReports();
+Assert.Contains(reports, r => r.RawQuery.Contains("Users"));
+```
+
+## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **No reports being sent**: Check `EnableInDevelopment`/`EnableInProduction` settings
-2. **API authentication errors**: Verify `ApiKey` configuration
-3. **Missing stack traces**: Ensure `CaptureStackTrace` is enabled
-4. **Performance impact**: Adjust `ThresholdMilliseconds` or disable in high-load scenarios
+| Issue | Cause | Solution |
+|-------|--------|----------|
+| No reports generated | Reporting disabled for environment | Check `EnableInDevelopment`/`EnableInProduction` |
+| API authentication errors | Invalid API key | Verify `ApiKey` configuration |
+| Missing stack traces | Stack trace capture disabled | Set `CaptureStackTrace = true` |
+| High memory usage | Large query texts/stack traces | Reduce `MaxQueryLength` and `MaxStackTraceLines` |
+| Execution plan timeouts | Database connection issues | Increase `ExecutionPlanTimeoutSeconds` |
 
-### Logging
+### Debug Logging
 
-Enable detailed logging to troubleshoot issues:
+Enable detailed logging to diagnose issues:
 
 ```json
 {
   "Logging": {
     "LogLevel": {
-      "EFCore.QueryAnalyzer": "Debug"
+      "EFCore.QueryAnalyzer": "Debug",
+      "EFCore.QueryAnalyzer.Core.QueryPerformanceInterceptor": "Trace"
     }
   }
 }
 ```
 
-## Requirements
+## 📄 Requirements
 
-- .NET 6.0 or higher
-- Entity Framework Core 6.0 or higher
-- ASP.NET Core (for dependency injection scenarios)
+- **.NET 6.0** or higher
+- **Entity Framework Core 6.0** or higher
+- **ASP.NET Core** (for dependency injection scenarios)
 
-## License
+## 📝 Sample Configuration Files
 
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please see CONTRIBUTING.md for guidelines.
-
----
-
-## Sample appsettings.json
+### Development Configuration
 
 ```json
 {
@@ -684,73 +425,50 @@ Contributions are welcome! Please see CONTRIBUTING.md for guidelines.
     "DefaultConnection": "Server=localhost;Database=MyApp;Trusted_Connection=true;"
   },
   "QueryAnalyzer": {
-    "ThresholdMilliseconds": 1000,
-    "ApiEndpoint": "https://monitoring.mycompany.com/api/slow-queries",
-    "ApiKey": "sk-1234567890abcdef",
+    "ThresholdMilliseconds": 100,
     "CaptureStackTrace": true,
-    "MaxStackTraceLines": 15,
-    "MaxQueryLength": 5000,
-    "ApiTimeoutMs": 10000,
-    "EnableInDevelopment": true,
-    "EnableInProduction": false,
     "CaptureExecutionPlan": true,
-    "DatabaseProvider": "Auto"
+    "EnableInDevelopment": true,
+    "DatabaseProvider": "SqlServer"
   },
   "Logging": {
     "LogLevel": {
-      "Default": "Information",
       "EFCore.QueryAnalyzer": "Information"
     }
   }
 }
 ```
 
-## Sample appsettings.Production.json
+### Production Configuration
 
 ```json
 {
   "QueryAnalyzer": {
     "ThresholdMilliseconds": 2000,
+    "ApiEndpoint": "https://monitoring.company.com/api/slow-queries",
+    "ApiKey": "prod-api-key-here",
     "CaptureStackTrace": false,
     "EnableInProduction": true,
     "ApiTimeoutMs": 5000,
-    "CaptureExecutionPlan": true,
     "DatabaseProvider": "SqlServer"
   }
 }
 ```
 
-## Database-Specific Configuration Examples
+## 🤝 Contributing
 
-### SQL Server with Full Analysis
-```json
-{
-  "QueryAnalyzer": {
-    "DatabaseProvider": "SqlServer",
-    "CaptureExecutionPlan": true,
-    "ThresholdMilliseconds": 1000
-  }
-}
-```
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and submit pull requests to our [GitHub repository](https://github.com/akhmadkhasan68/efcore-query-analyzer).
 
-### PostgreSQL Configuration
-```json
-{
-  "QueryAnalyzer": {
-    "DatabaseProvider": "PostgreSQL", 
-    "CaptureExecutionPlan": true,
-    "ThresholdMilliseconds": 800
-  }
-}
-```
+## 📜 License
 
-### Multi-Database Environment
-```json
-{
-  "QueryAnalyzer": {
-    "DatabaseProvider": "Auto",
-    "CaptureExecutionPlan": true,
-    "ThresholdMilliseconds": 1200
-  }
-}
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📞 Support
+
+- **GitHub Issues**: [Report bugs or request features](https://github.com/akhmadkhasan68/efcore-query-analyzer/issues)
+- **Documentation**: [Full documentation and examples](https://github.com/akhmadkhasan68/efcore-query-analyzer/wiki)
+- **NuGet Package**: [EFCore.QueryAnalyzer](https://www.nuget.org/packages/EFCore.QueryAnalyzer/)
+
+---
+
+**Made with ❤️ for the .NET community**
