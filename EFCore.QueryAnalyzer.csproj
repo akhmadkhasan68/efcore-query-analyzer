@@ -2,11 +2,11 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net7.0;net6.0</TargetFrameworks>
     <PackageId>EFCore.QueryAnalyzer</PackageId>
-    <PackageVersion>1.0.2</PackageVersion>
+    <PackageVersion>1.1.0-beta05-12</PackageVersion>
     <Title>EF Core Query Performance Analyzer</Title>
     <Description>A performance monitoring package for Entity Framework Core that tracks slow queries, execution times, and provides detailed analytics for query optimization.</Description>
-    <Authors>Your Name</Authors>
-    <Company>Your Company</Company>
+    <Authors>Akhmad Khasan</Authors>
+    <Company>DOT Indonesia</Company>
     <PackageTags>entityframework;efcore;performance;monitoring;query;analyzer;orm</PackageTags>
     <PackageProjectUrl>https://github.com/akhmadkhasan68/efcore-query-analyzer</PackageProjectUrl>
     <RepositoryUrl>https://github.com/akhmadkhasan68/efcore-query-analyzer</RepositoryUrl>
@@ -21,6 +21,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="6.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="6.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="6.0.0" />
@@ -33,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-    <None Include="CHANGELOG.md" Pack="true" PackagePath="\" />
+    <None Include="docs/README.md" Pack="true" PackagePath="\" />
+    <None Include="docs/CHANGELOG.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

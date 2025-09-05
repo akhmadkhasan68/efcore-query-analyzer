@@ -1,4 +1,6 @@
-namespace EFCore.QueryAnalyzer
+using EFCore.QueryAnalyzer.Core.Models;
+
+namespace EFCore.QueryAnalyzer.Core
 {
     public interface IQueryReportingService
     {

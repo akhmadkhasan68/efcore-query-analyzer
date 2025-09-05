@@ -2,7 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using EFCore.QueryAnalyzer.Core;
+using EFCore.QueryAnalyzer.Services;
+using EFCore.QueryAnalyzer.Core.Models;
 
 namespace EFCore.QueryAnalyzer.Extensions
 {
@@ -147,8 +151,11 @@ namespace EFCore.QueryAnalyzer.Extensions
         private static IServiceCollection AddEFCoreQueryAnalyzerCore(IServiceCollection services, bool registerDefaultReportingService = true)
         {
             // Register options resolver
-            services.TryAddTransient<QueryAnalyzerOptions>(provider =>
+            services.TryAddTransient(provider =>
                 provider.GetRequiredService<IOptions<QueryAnalyzerOptions>>().Value);
+
+            // Register SQL Server statistics parser
+            // services.TryAddTransient<SqlServerStatisticsParser>();
 
             // Register default HTTP reporting service if not already registered
             if (registerDefaultReportingService)
@@ -157,8 +164,14 @@ namespace EFCore.QueryAnalyzer.Extensions
                 services.TryAddTransient<IQueryReportingService, HttpQueryReportingService>();
             }
 
-            // Register the interceptor
-            services.TryAddTransient<QueryPerformanceInterceptor>();
+            // Register the interceptor with service provider injection
+            services.TryAddTransient(provider =>
+                new QueryPerformanceInterceptor(
+                    provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
+                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalyzerOptions>()
+                )
+            );
 
             return services;
         }
@@ -223,6 +236,7 @@ namespace EFCore.QueryAnalyzer.Extensions
             // Create a minimal service provider for the interceptor
             var services = new ServiceCollection();
             services.AddLogging();
+            // services.AddTransient<SqlServerStatisticsParser>();
 
             if (reportingService != null)
             {
@@ -235,7 +249,13 @@ namespace EFCore.QueryAnalyzer.Extensions
             }
 
             services.AddSingleton(options);
-            services.AddTransient<QueryPerformanceInterceptor>();
+            services.AddTransient(provider =>
+                new QueryPerformanceInterceptor(
+                    provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
+                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalyzerOptions>()
+                )
+            );
 
             var serviceProvider = services.BuildServiceProvider();
             var interceptor = serviceProvider.GetRequiredService<QueryPerformanceInterceptor>();
@@ -309,6 +329,7 @@ namespace EFCore.QueryAnalyzer.Extensions
             // Create a minimal service provider for the interceptor
             var services = new ServiceCollection();
             services.AddLogging();
+            // services.AddTransient<SqlServerStatisticsParser>();
 
             if (reportingService != null)
             {
@@ -321,7 +342,13 @@ namespace EFCore.QueryAnalyzer.Extensions
             }
 
             services.AddSingleton(options);
-            services.AddTransient<QueryPerformanceInterceptor>();
+            services.AddTransient(provider =>
+                new QueryPerformanceInterceptor(
+                    provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
+                    provider.GetRequiredService<IQueryReportingService>(),
+                    provider.GetRequiredService<QueryAnalyzerOptions>()
+                )
+            );
 
             var serviceProvider = services.BuildServiceProvider();
             var interceptor = serviceProvider.GetRequiredService<QueryPerformanceInterceptor>();

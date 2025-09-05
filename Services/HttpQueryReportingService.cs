@@ -3,8 +3,10 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Text;
 using Microsoft.Extensions.Hosting;
+using EFCore.QueryAnalyzer.Core;
+using EFCore.QueryAnalyzer.Core.Models;
 
-namespace EFCore.QueryAnalyzer
+namespace EFCore.QueryAnalyzer.Services
 {
     /// <summary>
     /// Default implementation that reports slow queries to an HTTP API
@@ -27,8 +29,12 @@ namespace EFCore.QueryAnalyzer
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _hostEnvironment = hostEnvironment;
 
-            // Configure HttpClient timeout
+            // Configure HttpClient timeout and User-Agent
             _httpClient.Timeout = TimeSpan.FromMilliseconds(_options.ApiTimeoutMs);
+            if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
+            {
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("EFCore.QueryAnalyzer/1.0.0");
+            }
         }
 
         public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken = default)
@@ -88,7 +94,7 @@ namespace EFCore.QueryAnalyzer
 
             var version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "Unknown";
 
-            return new SlowQueryReport
+            var report = new SlowQueryReport
             {
                 QueryId = context.QueryId,
                 RawQuery = TruncateQuery(context.CommandText),
@@ -99,8 +105,17 @@ namespace EFCore.QueryAnalyzer
                 ContextType = context.ContextType,
                 Environment = environment,
                 ApplicationName = applicationName,
-                Version = version
+                Version = version,
+                ExecutionPlan = context.ExecutionPlan.ToSlowQueryReportExecutionPlan(),
             };
+
+            _logger.LogDebug("Created slow query report: {Report}", JsonSerializer.Serialize(report, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            }));
+
+            return report;
         }
 
         private async Task SendReportAsync(SlowQueryReport report, CancellationToken cancellationToken)
@@ -123,8 +138,6 @@ namespace EFCore.QueryAnalyzer
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
             }
 
-            // Add user agent
-            request.Headers.Add("User-Agent", "EFCore.QueryAnalyzer/1.0.0");
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
 

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
+using EFCore.QueryAnalyzer.Core;
+using EFCore.QueryAnalyzer.Core.Models;
 
-namespace EFCore.QueryAnalyzer
+namespace EFCore.QueryAnalyzer.Services
 {
     /// <summary>
     /// In-memory implementation for testing or local development
@@ -22,16 +24,14 @@ namespace EFCore.QueryAnalyzer
                 StackTrace = context.StackTrace,
                 Timestamp = context.StartTime,
                 ContextType = context.ContextType,
-                Environment = "InMemory"
+                Environment = "InMemory",
+                ExecutionPlan = context.ExecutionPlan.ToSlowQueryReportExecutionPlan(),
             };
 
             lock (_lock)
             {
                 _reports.Add(report);
             }
-
-            _logger.LogInformation("Slow query stored in memory: {QueryId} ({Duration}ms)",
-                context.QueryId, context.ExecutionTime.TotalMilliseconds);
 
             return Task.CompletedTask;
         }

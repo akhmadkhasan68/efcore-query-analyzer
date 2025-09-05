@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
+using EFCore.QueryAnalyzer.Core;
+using EFCore.QueryAnalyzer.Core.Models;
 
-namespace EFCore.QueryAnalyzer
+namespace EFCore.QueryAnalyzer.Services
 {
     /// <summary>
     /// Composite service that can use multiple reporting strategies

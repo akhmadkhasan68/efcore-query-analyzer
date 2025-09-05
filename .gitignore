@@ -435,3 +435,11 @@ $RECYCLE.BIN/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Local Release Build
+nupkg/
+
+# Claude Code
+.claude/
+CLAUDE.MD
+.mcp.json
