@@ -1,11 +1,9 @@
 using EFCore.QueryAnalyzer.Core.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
-using System.Xml;
 
 namespace EFCore.QueryAnalyzer.Core
 {
@@ -176,27 +174,49 @@ namespace EFCore.QueryAnalyzer.Core
             try
             {
                 var stackTrace = Environment.StackTrace;
+                if (string.IsNullOrEmpty(stackTrace))
+                    return null;
+
                 var projectRoot = FindProjectRoot();
 
-                var lines = stackTrace.Split('\n')
-                    .Where(line => !string.IsNullOrWhiteSpace(line) && IsApplicationCode(line, projectRoot))
+                var lines = stackTrace.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(line => !string.IsNullOrWhiteSpace(line))
+                    .Select(line => line.Trim())
+                    .Where(line => IsApplicationCode(line, projectRoot))
                     .Take(_options.MaxStackTraceLines)
-                    .Select(line => ConvertToRelativePath(line.Trim()))
+                    .Select(line => ConvertToRelativePath(line))
                     .Where(line => !string.IsNullOrEmpty(line))
+                    .Distinct() // Remove duplicate entries
                     .ToArray();
 
+                // Return null if no meaningful application code found
                 return lines.Length > 0 ? lines : null;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error capturing stack trace");
+                // Log warning for stack trace capture issues (kept minimal for production)
+                _logger.LogWarning(ex, "Error capturing filtered stack trace for query analysis");
                 return null;
             }
         }
 
         private static bool IsApplicationCode(string stackTraceLine, string? projectRoot)
         {
-            // If we have a project root, only include files within the project directory
+            // Quick exclusion based on method patterns - exclude framework code
+            if (IsFrameworkCode(stackTraceLine))
+                return false;
+
+            // Get application namespace from project root folder name
+            var appNamespace = projectRoot != null ? Path.GetFileName(projectRoot) : null
+                ?? "YourAppNamespace"; // Fallback if project root not found
+
+            // Exclude system and framework namespaces, only include application code
+            if (appNamespace != null && !stackTraceLine.Contains(appNamespace))
+            {
+                return false;
+            }
+
+            // Primary filter: If we have a project root, only include files within the project directory
             if (projectRoot != null)
             {
                 var inIndex = stackTraceLine.IndexOf(" in ");
@@ -211,7 +231,144 @@ namespace EFCore.QueryAnalyzer.Core
                 }
             }
 
-            return true;
+            // Fallback: Use namespace-based filtering when project root isn't available
+            return IsApplicationNamespace(stackTraceLine);
+        }
+
+        private static bool IsFrameworkCode(string stackTraceLine)
+        {
+            // Extract method information from stack trace line
+            // Pattern: "at Namespace.ClassName.MethodName(...) in file.cs:line N"
+            var atIndex = stackTraceLine.IndexOf("at ");
+            if (atIndex == -1) return false;
+
+            var methodStart = atIndex + 3;
+            var inIndex = stackTraceLine.IndexOf(" in ");
+            var methodEnd = inIndex != -1 ? inIndex : stackTraceLine.Length;
+
+            if (methodStart >= methodEnd) return false;
+
+            var methodInfo = stackTraceLine.Substring(methodStart, methodEnd - methodStart);
+
+            // Exclude compiler-generated lambda methods and anonymous code
+            if (IsCompilerGeneratedCode(methodInfo))
+                return true;
+
+            // Exclude known framework namespaces
+            var frameworkPrefixes = new[]
+            {
+                // Entity Framework Core
+                "Microsoft.EntityFrameworkCore",
+                "Microsoft.Data.SqlClient",
+                
+                // ASP.NET Core
+                "Microsoft.AspNetCore",
+                "Microsoft.Extensions",
+                
+                // System namespaces
+                "System.",
+                "System.Linq",
+                "System.Threading",
+                "System.Collections",
+                "System.Reflection",
+                "System.Runtime",
+                "System.Text.Json",
+                
+                // Query Analyzer itself (avoid recursive stack traces)
+                "EFCore.QueryAnalyzer",
+                
+                // Common third-party frameworks
+                "Newtonsoft.Json",
+                "AutoMapper",
+                "FluentValidation",
+                "MediatR",
+                
+                // .NET Runtime internals
+                "Microsoft.Extensions.DependencyInjection",
+                "Microsoft.Extensions.Hosting",
+                "Microsoft.Extensions.Logging",
+                "Microsoft.Extensions.Configuration",
+                
+                // Async/await infrastructure
+                "System.Runtime.CompilerServices",
+                "System.Threading.Tasks"
+            };
+
+            return frameworkPrefixes.Any(prefix => methodInfo.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsCompilerGeneratedCode(string methodInfo)
+        {
+            // Check for lambda methods and compiler-generated code patterns
+            var compilerGeneratedPatterns = new[]
+            {
+                // Lambda methods
+                "lambda_method",
+                
+                // Compiler-generated closure classes
+                "<>c__DisplayClass",
+                
+                // Cached delegate fields (C# compiler optimization)
+                "<>9__",
+                
+                // Anonymous methods
+                "<>c.<",
+                
+                // Local functions
+                "<>c__localFunction",
+                
+                // Async state machine methods
+                "MoveNext()",
+                
+                // Dynamic method invocations
+                "DynamicMethod",
+                
+                // Expression tree compiled methods
+                "CallSite"
+            };
+
+            return compilerGeneratedPatterns.Any(pattern =>
+                methodInfo.Contains(pattern, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsApplicationNamespace(string stackTraceLine)
+        {
+            // Extract method information
+            var atIndex = stackTraceLine.IndexOf("at ");
+            if (atIndex == -1) return false;
+
+            var methodStart = atIndex + 3;
+            var inIndex = stackTraceLine.IndexOf(" in ");
+            var methodEnd = inIndex != -1 ? inIndex : stackTraceLine.Length;
+
+            if (methodStart >= methodEnd) return false;
+
+            var methodInfo = stackTraceLine[methodStart..methodEnd];
+
+            // Try to detect user assemblies by looking for common application patterns
+            var userCodeIndicators = new[]
+            {
+                ".Controllers.",
+                ".Services.",
+                ".Repositories.",
+                ".Models.",
+                ".Domain.",
+                ".Business.",
+                ".Application.",
+                ".Core.",
+                ".Data.",
+                ".API.",
+                ".Web.",
+                ".Infrastructure."
+            };
+
+            // Include if it matches user code patterns
+            if (userCodeIndicators.Any(indicator => methodInfo.Contains(indicator, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            // Include if it doesn't start with known system prefixes
+            var systemPrefixes = new[] { "Microsoft.", "System.", "System.Runtime" };
+            return !systemPrefixes.Any(prefix => methodInfo.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
         private static string ConvertToRelativePath(string stackTraceLine)

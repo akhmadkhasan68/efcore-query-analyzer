@@ -38,7 +38,7 @@ namespace EFCore.QueryAnalyzer.Core.Models
         /// <summary>
         /// Maximum number of lines to capture in stack trace (default: 10)
         /// </summary>
-        public int MaxStackTraceLines { get; set; } = 10;
+        public int MaxStackTraceLines { get; set; } = 20;
 
         /// <summary>
         /// Maximum length of query text to store (default: 10000)

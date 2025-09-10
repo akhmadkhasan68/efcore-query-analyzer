@@ -86,7 +86,7 @@ That's it! The analyzer will now monitor your queries and report slow ones autom
 | `IsEnabled` | `bool` | `true` | Whether the analyzer is enabled |
 | `CaptureStackTrace` | `bool` | `true` | Capture stack traces for slow queries |
 | `CaptureExecutionPlan` | `bool` | `false` | Capture database execution plans |
-| `MaxStackTraceLines` | `int` | `10` | Maximum lines in captured stack traces |
+| `MaxStackTraceLines` | `int` | `20` | Maximum lines in captured stack traces |
 | `MaxQueryLength` | `int` | `10000` | Maximum query text length to store |
 | `ApiEndpoint` | `string?` | `null` | HTTP endpoint for reporting slow queries |
 | `ApiKey` | `string?` | `null` | API key for authentication |
