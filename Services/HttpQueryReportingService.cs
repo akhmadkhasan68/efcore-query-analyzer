@@ -42,7 +42,6 @@ namespace EFCore.QueryAnalyzer.Services
             // Check if reporting should be enabled for current environment
             if (!ShouldReport())
             {
-                _logger.LogTrace("Query reporting disabled for current environment");
                 return;
             }
 
@@ -109,11 +108,6 @@ namespace EFCore.QueryAnalyzer.Services
                 ExecutionPlan = context.ExecutionPlan.ToSlowQueryReportExecutionPlan(),
             };
 
-            _logger.LogDebug("Created slow query report: {Report}", JsonSerializer.Serialize(report, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = false
-            }));
 
             return report;
         }

@@ -21,7 +21,6 @@ namespace EFCore.QueryAnalyzer.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Query Analysis Background Service started");
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -46,7 +45,6 @@ namespace EFCore.QueryAnalyzer.Services
                 }
             }
 
-            _logger.LogInformation("Query Analysis Background Service stopped");
         }
 
         private async Task ProcessQueueItemsAsync(CancellationToken cancellationToken)
@@ -70,10 +68,6 @@ namespace EFCore.QueryAnalyzer.Services
                 }
             }
 
-            if (processedCount > 0)
-            {
-                _logger.LogTrace("Processed {ProcessedCount} queued query analysis items", processedCount);
-            }
         }
 
         private async Task ProcessSingleItemAsync(QueryTrackingContext context, CancellationToken cancellationToken)
@@ -82,7 +76,6 @@ namespace EFCore.QueryAnalyzer.Services
             var reportingService = scope.ServiceProvider.GetRequiredService<IQueryReportingService>();
             var options = scope.ServiceProvider.GetRequiredService<QueryAnalyzerOptions>();
 
-            _logger.LogTrace("Processing queued query analysis for QueryId: {QueryId}", context.QueryId);
 
             try
             {
@@ -102,7 +95,6 @@ namespace EFCore.QueryAnalyzer.Services
 
                 await reportingService.ReportSlowQueryAsync(context, cancellationToken);
 
-                _logger.LogTrace("Successfully processed queued query analysis for QueryId: {QueryId}", context.QueryId);
             }
             catch (Exception ex)
             {
@@ -115,7 +107,6 @@ namespace EFCore.QueryAnalyzer.Services
 
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Query Analysis Background Service is stopping. Processing remaining {QueueCount} items...", _queue.Count);
 
             // Process remaining items in the queue during shutdown
             var remainingItems = 0;
@@ -135,10 +126,6 @@ namespace EFCore.QueryAnalyzer.Services
                 }
             }
 
-            if (remainingItems > 0)
-            {
-                _logger.LogInformation("Processed {RemainingItems} remaining items during shutdown", remainingItems);
-            }
 
             await base.StopAsync(cancellationToken);
         }
@@ -194,7 +181,6 @@ namespace EFCore.QueryAnalyzer.Services
         {
             try
             {
-                _logger.LogDebug("Capturing execution plan using existing connection for query {QueryId}", context.QueryId);
 
                 using var command = connection.CreateCommand();
                 command.CommandTimeout = options.ExecutionPlanTimeoutSeconds;
@@ -253,7 +239,6 @@ namespace EFCore.QueryAnalyzer.Services
         {
             try
             {
-                _logger.LogDebug("Capturing execution plan using new connection for query {QueryId}", context.QueryId);
 
                 // Create new connection with the full connection string
                 using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
@@ -329,7 +314,6 @@ namespace EFCore.QueryAnalyzer.Services
                     var connectionString = getConnectionStringMethod.Invoke(database, null) as string;
                     if (!string.IsNullOrEmpty(connectionString))
                     {
-                        _logger.LogDebug("Retrieved connection string from DbContext.Database.GetConnectionString()");
                         return connectionString;
                     }
                 }
@@ -343,7 +327,6 @@ namespace EFCore.QueryAnalyzer.Services
                         var connectionString = connectionStringProperty.GetValue(database) as string;
                         if (!string.IsNullOrEmpty(connectionString))
                         {
-                            _logger.LogDebug("Retrieved connection string from DbContext.Database.ConnectionString property");
                             return connectionString;
                         }
                     }
@@ -368,7 +351,6 @@ namespace EFCore.QueryAnalyzer.Services
             {
                 // This is a fallback - you might want to implement this based on your configuration
                 // For now, return null to indicate this method is not implemented
-                _logger.LogDebug("Configuration-based connection string retrieval not implemented");
                 return null;
             }
             catch (Exception ex)

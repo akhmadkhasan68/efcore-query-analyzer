@@ -101,8 +101,6 @@ namespace EFCore.QueryAnalyzer.Core
 
                 _activeQueries[context.QueryId] = context;
 
-                _logger.LogTrace("Query tracking started: {QueryId} - {ConnectionId}",
-                    context.QueryId, eventData.ConnectionId);
             }
             catch (Exception ex)
             {
@@ -120,7 +118,6 @@ namespace EFCore.QueryAnalyzer.Core
 
                 if (matchingContext == null)
                 {
-                    _logger.LogTrace("No matching tracking context found for connection {ConnectionId}", eventData.ConnectionId);
                     return Task.CompletedTask;
                 }
 
@@ -130,8 +127,6 @@ namespace EFCore.QueryAnalyzer.Core
                 matchingContext.EndTime = DateTime.UtcNow;
                 matchingContext.ExecutionTime = matchingContext.Stopwatch.Elapsed;
 
-                _logger.LogTrace("Query tracking completed: {QueryId}, Duration: {Duration}ms",
-                    matchingContext.QueryId, matchingContext.ExecutionTime.TotalMilliseconds);
 
                 // Check if execution time exceeds threshold
                 if (matchingContext.ExecutionTime.TotalMilliseconds >= _options.ThresholdMilliseconds)
@@ -145,7 +140,6 @@ namespace EFCore.QueryAnalyzer.Core
                     // The background service will handle execution plan capture and reporting
                     _queue.Enqueue(matchingContext);
 
-                    _logger.LogTrace("Queued slow query for background processing: {QueryId}", matchingContext.QueryId);
                 }
 
                 return Task.CompletedTask;
@@ -173,7 +167,6 @@ namespace EFCore.QueryAnalyzer.Core
                 _logger.LogWarning(ex, "Error extracting parameters from command");
             }
 
-            _logger.LogTrace("Extracted parameters from command {Parameters}", string.Join(", ", parameters.Select(kv => $"{kv.Key}={kv.Value}")));
 
             return parameters;
         }
