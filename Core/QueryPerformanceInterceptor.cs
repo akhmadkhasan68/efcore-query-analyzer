@@ -144,7 +144,7 @@ namespace EFCore.QueryAnalyzer.Core
                     // Enqueue for background processing - this is ultra-fast and non-blocking
                     // The background service will handle execution plan capture and reporting
                     _queue.Enqueue(matchingContext);
-                    
+
                     _logger.LogTrace("Queued slow query for background processing: {QueryId}", matchingContext.QueryId);
                 }
 
@@ -200,16 +200,6 @@ namespace EFCore.QueryAnalyzer.Core
 
         private static bool IsApplicationCode(string stackTraceLine, string? projectRoot)
         {
-            // Get application namespace from project root folder name
-            var appNamespace = projectRoot != null ? Path.GetFileName(projectRoot) : null
-                ?? "YourAppNamespace"; // Fallback if project root not found
-
-            // Exclude system and framework namespaces, only include application code
-            if (appNamespace != null && !stackTraceLine.Contains(appNamespace))
-            {
-                return false;
-            }
-
             // If we have a project root, only include files within the project directory
             if (projectRoot != null)
             {

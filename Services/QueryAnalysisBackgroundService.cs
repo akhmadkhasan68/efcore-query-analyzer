@@ -205,8 +205,9 @@ namespace EFCore.QueryAnalyzer.Services
 
                 try
                 {
-                    // Execute the query to get execution plan
-                    command.CommandText = BuildParameterizedQuery(context.CommandText, context.Parameters);
+                    // Execute the query to get execution plan using proper parameterized approach
+                    command.CommandText = context.CommandText;
+                    AddParametersToCommand(command, context.Parameters);
 
                     using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -216,6 +217,11 @@ namespace EFCore.QueryAnalyzer.Services
                         return FormatExecutionPlan(executionPlanXml, DatabaseProvider.SqlServer);
                     }
 
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error executing command to capture execution plan on new connection");
                     return null;
                 }
                 finally
@@ -261,8 +267,9 @@ namespace EFCore.QueryAnalyzer.Services
 
                 try
                 {
-                    // Execute the query to get execution plan
-                    command.CommandText = BuildParameterizedQuery(context.CommandText, context.Parameters);
+                    // Execute the query to get execution plan using proper parameterized approach
+                    command.CommandText = context.CommandText;
+                    AddParametersToCommand(command, context.Parameters);
 
                     using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -272,6 +279,11 @@ namespace EFCore.QueryAnalyzer.Services
                         return FormatExecutionPlan(executionPlanXml, DatabaseProvider.SqlServer);
                     }
 
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error executing command to capture execution plan on new connection");
                     return null;
                 }
                 finally
@@ -364,26 +376,39 @@ namespace EFCore.QueryAnalyzer.Services
             }
         }
 
-        private static string BuildParameterizedQuery(string query, Dictionary<string, object?> parameters)
+        private static void AddParametersToCommand(DbCommand command, Dictionary<string, object?> parameters)
         {
-            var result = query;
+            if (parameters == null || parameters.Count == 0)
+                return;
+
+            // Clear any existing parameters
+            command.Parameters.Clear();
+
             foreach (var param in parameters)
             {
-                var value = param.Value switch
-                {
-                    null => "NULL",
-                    string s => $"'{s.Replace("'", "''")}'",
-                    DateTime dt => $"'{dt:yyyy-MM-dd HH:mm:ss}'",
-                    bool b => b ? "1" : "0",
-                    decimal d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    _ => param.Value.ToString()
-                };
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = param.Key;
+                parameter.Value = param.Value ?? DBNull.Value;
 
-                result = result.Replace(param.Key, value);
+                // Handle specific types that need special treatment
+                if (param.Value is Guid guid)
+                {
+                    parameter.Value = guid;
+                    parameter.DbType = System.Data.DbType.Guid;
+                }
+                else if (param.Value is DateTime dateTime)
+                {
+                    parameter.Value = dateTime;
+                    parameter.DbType = System.Data.DbType.DateTime;
+                }
+                else if (param.Value is bool boolean)
+                {
+                    parameter.Value = boolean;
+                    parameter.DbType = System.Data.DbType.Boolean;
+                }
+
+                command.Parameters.Add(parameter);
             }
-            return result;
         }
 
         private QueryTrackingContextExecutionPlan? FormatExecutionPlan(string? rawPlan, DatabaseProvider provider)

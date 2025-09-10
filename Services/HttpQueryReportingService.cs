@@ -138,6 +138,12 @@ namespace EFCore.QueryAnalyzer.Services
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
             }
 
+            // Add project ID header if configured
+            if (!string.IsNullOrEmpty(_options.ProjectId))
+            {
+                request.Headers.Add("X-PROJECT-ID", _options.ProjectId);
+            }
+
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
 

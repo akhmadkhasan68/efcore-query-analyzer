@@ -56,6 +56,11 @@ namespace EFCore.QueryAnalyzer.Core.Models
         public string? ApiKey { get; set; }
 
         /// <summary>
+        /// Project identifier to be sent as X-PROJECT-ID header
+        /// </summary>
+        public string? ProjectId { get; set; }
+
+        /// <summary>
         /// Timeout for API calls in milliseconds (default: 5000ms)
         /// </summary>
         public int ApiTimeoutMs { get; set; } = 5000;
