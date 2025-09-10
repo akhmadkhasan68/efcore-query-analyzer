@@ -67,6 +67,7 @@ var app = builder.Build();
     "ThresholdMilliseconds": 1000,
     "ApiEndpoint": "https://your-monitoring-api.com/slow-queries",
     "ApiKey": "your-secret-api-key",
+    "ProjectId": "my-application",
     "CaptureStackTrace": true,
     "CaptureExecutionPlan": true,
     "EnableInDevelopment": true,
@@ -89,6 +90,7 @@ That's it! The analyzer will now monitor your queries and report slow ones autom
 | `MaxQueryLength` | `int` | `10000` | Maximum query text length to store |
 | `ApiEndpoint` | `string?` | `null` | HTTP endpoint for reporting slow queries |
 | `ApiKey` | `string?` | `null` | API key for authentication |
+| `ProjectId` | `string?` | `null` | Project identifier sent as X-PROJECT-ID header |
 | `ApiTimeoutMs` | `int` | `5000` | API request timeout in milliseconds |
 | `EnableInDevelopment` | `bool` | `true` | Enable reporting in development |
 | `EnableInProduction` | `bool` | `false` | Enable reporting in production |
@@ -118,6 +120,50 @@ builder.Services.AddEFCoreQueryAnalyzerWithHttp(
     });
 ```
 
+#### Advanced HTTP Configuration
+
+Configure project identification, custom headers, and enhanced HTTP settings:
+
+```csharp
+builder.Services.AddEFCoreQueryAnalyzerWithHttp(
+    options =>
+    {
+        // Basic configuration
+        options.ApiEndpoint = "https://monitoring.company.com/api/slow-queries";
+        options.ApiKey = builder.Configuration["MonitoringApiKey"];
+        
+        // Project identification - sent as X-PROJECT-ID header
+        options.ProjectId = "my-microservice-api";
+        
+        // Performance tuning
+        options.ApiTimeoutMs = 10000; // 10 second timeout
+        options.ThresholdMilliseconds = 500;
+        
+        // Production settings
+        options.EnableInProduction = true;
+        options.CaptureExecutionPlan = true;
+    },
+    httpClient =>
+    {
+        // HTTP client configuration
+        httpClient.Timeout = TimeSpan.FromSeconds(15);
+        
+        // Custom headers
+        httpClient.DefaultRequestHeaders.Add("X-Service-Name", "UserService");
+        httpClient.DefaultRequestHeaders.Add("X-Environment", builder.Environment.EnvironmentName);
+        httpClient.DefaultRequestHeaders.Add("X-Version", Assembly.GetExecutingAssembly().GetName().Version?.ToString());
+        
+        // Optional: Configure proxy, certificates, etc.
+        // httpClient.DefaultRequestHeaders.Add("X-Correlation-ID", correlationId);
+    });
+```
+
+The analyzer automatically sets:
+- **User-Agent**: `EFCore.QueryAnalyzer/1.0.0`
+- **Content-Type**: `application/json`
+- **Authorization**: `Bearer {ApiKey}` (when ApiKey is provided)
+- **X-PROJECT-ID**: `{ProjectId}` (when ProjectId is provided)
+
 ### 2. In-Memory Reporting (Testing/Development)
 
 ```csharp
@@ -136,21 +182,75 @@ var reports = reportingService?.GetReports();
 
 ### 3. Custom Reporting Service
 
+Create and register custom reporting services with flexible service lifetime options:
+
 ```csharp
 public class DatabaseReportingService : IQueryReportingService
 {
+    private readonly IDbContextFactory<LoggingDbContext> _dbContextFactory;
+    private readonly ILogger<DatabaseReportingService> _logger;
+
+    public DatabaseReportingService(
+        IDbContextFactory<LoggingDbContext> dbContextFactory,
+        ILogger<DatabaseReportingService> logger)
+    {
+        _dbContextFactory = dbContextFactory;
+        _logger = logger;
+    }
+
     public async Task ReportSlowQueryAsync(QueryTrackingContext context, 
         CancellationToken cancellationToken = default)
     {
-        // Store in database, send to message queue, etc.
-        await SaveToDatabase(context);
+        try
+        {
+            using var dbContext = _dbContextFactory.CreateDbContext();
+            
+            var logEntry = new SlowQueryLog
+            {
+                QueryId = context.QueryId,
+                Query = context.CommandText,
+                ExecutionTimeMs = context.ExecutionTime.TotalMilliseconds,
+                Timestamp = context.StartTime,
+                ContextType = context.ContextType
+            };
+
+            dbContext.SlowQueryLogs.Add(logEntry);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            
+            _logger.LogInformation("Logged slow query {QueryId} to database", context.QueryId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to log slow query {QueryId} to database", context.QueryId);
+        }
     }
 }
 
-// Register custom service
+// Register custom service with default (Transient) lifetime
 builder.Services.AddEFCoreQueryAnalyzerWithCustomReporting<DatabaseReportingService>(
-    options => options.ThresholdMilliseconds = 750);
+    options => 
+    {
+        options.ThresholdMilliseconds = 750;
+        options.CaptureStackTrace = true;
+        options.CaptureExecutionPlan = true;
+    });
+
+// Register with specific service lifetime (Singleton for performance)
+builder.Services.AddEFCoreQueryAnalyzerWithCustomReporting<DatabaseReportingService>(
+    options => options.ThresholdMilliseconds = 500,
+    ServiceLifetime.Singleton);
+
+// Register with Scoped lifetime for database operations
+builder.Services.AddEFCoreQueryAnalyzerWithCustomReporting<DatabaseReportingService>(
+    options => options.ThresholdMilliseconds = 1000,
+    ServiceLifetime.Scoped);
 ```
+
+#### Service Lifetime Considerations:
+
+- **Transient** (default): New instance per slow query report - safest option
+- **Scoped**: One instance per request scope - good for database operations
+- **Singleton**: Single instance for the application - best performance, ensure thread safety
 
 ### 4. Inline Configuration (No DI)
 
@@ -257,6 +357,58 @@ options.DatabaseProvider = DatabaseProvider.Auto;
 // Or specify explicitly
 options.DatabaseProvider = DatabaseProvider.PostgreSQL; // MySQL, Oracle, SQLite
 ```
+
+### Enhanced Parameterized Query Support
+
+EFCore.QueryAnalyzer now includes advanced parameterized query handling for more accurate execution plans:
+
+#### The Problem
+SQL Server's `SET SHOWPLAN_XML ON` doesn't work well with parameterized queries because the query optimizer needs actual values to make cost estimations and generate accurate execution plans.
+
+#### The Solution
+The analyzer automatically converts parameterized queries to use literal values when capturing execution plans:
+
+```csharp
+// Original parameterized query
+SELECT * FROM Users WHERE Age > @p0 AND City = @p1
+
+// Automatically converted to literal values for execution plan
+SELECT * FROM Users WHERE Age > 25 AND City = 'New York'
+```
+
+#### Benefits
+
+- **More Accurate Plans**: SQL Server optimizer sees actual values, not parameter placeholders
+- **Better Cost Estimates**: Execution plans show realistic cost calculations
+- **Improved Analysis**: Index usage recommendations are more precise
+- **Automatic Processing**: No configuration needed - works transparently
+
+#### Data Type Support
+
+The literal value conversion handles all common data types safely:
+
+```csharp
+// String parameters: Properly escaped and quoted
+@name = 'John O''Connor' → 'John O''Connor'
+
+// Numeric parameters: Direct conversion
+@age = 25 → 25
+@price = 99.99 → 99.99
+
+// Boolean parameters: Converted to bits
+@isActive = true → 1
+
+// Date parameters: SQL Server format
+@created = DateTime.Now → '2024-01-15 10:30:00.123'
+
+// GUID parameters: String format
+@userId = Guid.NewGuid() → 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+
+// NULL parameters: SQL NULL
+@optional = null → NULL
+```
+
+This enhancement is automatically enabled when `CaptureExecutionPlan = true` and works with both existing and new connection scenarios.
 
 ## 🌍 Environment Configuration
 
@@ -422,7 +574,71 @@ The built-in queue processing means you can:
 - **Use lower thresholds** - Catch more issues without slowdowns
 - **Enable detailed stack traces** - Background processing handles the overhead
 
-### 5. Testing Integration
+### 5. Production-Ready Logging
+
+EFCore.QueryAnalyzer has been optimized for production environments with minimal logging overhead:
+
+#### Silent Operation
+The package now operates with minimal log noise:
+- **No debug logs**: Debug and verbose logs have been removed to prevent log spam
+- **Essential logs only**: Only warnings and errors are logged for operational awareness
+- **Performance metrics**: Successful slow query reporting is logged as information
+
+#### Recommended Logging Configuration
+
+For production environments:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "EFCore.QueryAnalyzer": "Warning",
+      "EFCore.QueryAnalyzer.Services.HttpQueryReportingService": "Information"
+    }
+  }
+}
+```
+
+For development environments:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "EFCore.QueryAnalyzer": "Information",
+      "EFCore.QueryAnalyzer.Core.QueryPerformanceInterceptor": "Warning"
+    }
+  }
+}
+```
+
+#### What Gets Logged
+
+✅ **Information Level**:
+- Successful slow query reports
+- Background service lifecycle (if needed)
+
+⚠️ **Warning Level**:
+- API authentication issues
+- Configuration problems
+- Execution plan capture failures
+
+❌ **Error Level**:
+- HTTP request failures
+- Database connection issues
+- Unexpected exceptions
+
+🔇 **Removed** (No longer logged):
+- Query tracking started/completed
+- Parameter extraction details  
+- Background processing counts
+- Execution plan capture debug info
+- Service startup/shutdown messages
+
+This ensures your production logs stay clean while maintaining operational visibility.
+
+### 6. Testing Integration
 
 ```csharp
 // Test setup - background processing works in tests too
@@ -499,11 +715,16 @@ Enable detailed logging to diagnose issues:
     "CaptureExecutionPlan": true,
     "EnableInDevelopment": true,
     "DatabaseProvider": "SqlServer",
-    "ConnectionString": "Server=localhost;Database=MyApp;Trusted_Connection=true;"
+    "ConnectionString": "Server=localhost;Database=MyApp;Trusted_Connection=true;",
+    "MaxStackTraceLines": 15,
+    "MaxQueryLength": 20000,
+    "ExecutionPlanTimeoutSeconds": 45
   },
   "Logging": {
     "LogLevel": {
-      "EFCore.QueryAnalyzer": "Information"
+      "Default": "Information",
+      "EFCore.QueryAnalyzer": "Information",
+      "EFCore.QueryAnalyzer.Core.QueryPerformanceInterceptor": "Warning"
     }
   }
 }
@@ -517,12 +738,23 @@ Enable detailed logging to diagnose issues:
     "ThresholdMilliseconds": 1000,
     "ApiEndpoint": "https://monitoring.company.com/api/slow-queries",
     "ApiKey": "prod-api-key-here",
+    "ProjectId": "my-production-app",
     "CaptureStackTrace": true,
     "CaptureExecutionPlan": true,
     "EnableInProduction": true,
-    "ApiTimeoutMs": 5000,
+    "ApiTimeoutMs": 10000,
     "DatabaseProvider": "SqlServer",
-    "ConnectionString": "Server=prod-server;Database=MyApp;Integrated Security=true;"
+    "ConnectionString": "Server=prod-server;Database=MyApp;Integrated Security=true;",
+    "MaxStackTraceLines": 10,
+    "MaxQueryLength": 15000,
+    "ExecutionPlanTimeoutSeconds": 30
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "EFCore.QueryAnalyzer": "Warning",
+      "EFCore.QueryAnalyzer.Services.HttpQueryReportingService": "Information"
+    }
   }
 }
 ```
