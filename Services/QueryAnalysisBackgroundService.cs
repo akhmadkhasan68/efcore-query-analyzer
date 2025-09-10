@@ -205,9 +205,10 @@ namespace EFCore.QueryAnalyzer.Services
 
                 try
                 {
-                    // Execute the query to get execution plan using proper parameterized approach
-                    command.CommandText = context.CommandText;
-                    AddParametersToCommand(command, context.Parameters);
+                    // Execute the query to get execution plan using literal values instead of parameters
+                    // This is necessary because SHOWPLAN_XML doesn't work well with parameterized queries
+                    var literalCommandText = SubstituteParametersWithLiterals(context.CommandText, context.Parameters);
+                    command.CommandText = literalCommandText;
 
                     using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -221,7 +222,7 @@ namespace EFCore.QueryAnalyzer.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error executing command to capture execution plan on new connection");
+                    _logger.LogError(ex, "Error executing command to capture execution plan using existing connection");
                     return null;
                 }
                 finally
@@ -267,9 +268,10 @@ namespace EFCore.QueryAnalyzer.Services
 
                 try
                 {
-                    // Execute the query to get execution plan using proper parameterized approach
-                    command.CommandText = context.CommandText;
-                    AddParametersToCommand(command, context.Parameters);
+                    // Execute the query to get execution plan using literal values instead of parameters
+                    // This is necessary because SHOWPLAN_XML doesn't work well with parameterized queries
+                    var literalCommandText = SubstituteParametersWithLiterals(context.CommandText, context.Parameters);
+                    command.CommandText = literalCommandText;
 
                     using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -374,6 +376,64 @@ namespace EFCore.QueryAnalyzer.Services
                 _logger.LogWarning(ex, "Error getting connection string from configuration");
                 return null;
             }
+        }
+
+        private static string SubstituteParametersWithLiterals(string commandText, Dictionary<string, object?> parameters)
+        {
+            if (parameters == null || parameters.Count == 0)
+                return commandText;
+
+            var result = commandText;
+
+            foreach (var param in parameters)
+            {
+                var parameterName = param.Key;
+                var parameterValue = param.Value;
+
+                // Handle both @parameter and ? parameter formats
+                var literalValue = ConvertToSqlLiteral(parameterValue);
+                
+                // Replace @parameterName with literal value
+                if (parameterName.StartsWith("@"))
+                {
+                    result = result.Replace(parameterName, literalValue);
+                }
+                else
+                {
+                    // Handle @parameterName format even if parameter doesn't start with @
+                    result = result.Replace($"@{parameterName}", literalValue);
+                }
+            }
+
+            return result;
+        }
+
+        private static string ConvertToSqlLiteral(object? value)
+        {
+            return value switch
+            {
+                null => "NULL",
+                string str => $"'{str.Replace("'", "''")}'", // Escape single quotes
+                char ch => $"'{ch.ToString().Replace("'", "''")}'",
+                bool boolean => boolean ? "1" : "0",
+                byte b => b.ToString(),
+                sbyte sb => sb.ToString(),
+                short s => s.ToString(),
+                ushort us => us.ToString(),
+                int i => i.ToString(),
+                uint ui => ui.ToString(),
+                long l => l.ToString(),
+                ulong ul => ul.ToString(),
+                float f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                double d => d.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                decimal dec => dec.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                DateTime dt => $"'{dt:yyyy-MM-dd HH:mm:ss.fff}'",
+                DateTimeOffset dto => $"'{dto:yyyy-MM-dd HH:mm:ss.fff zzz}'",
+                TimeSpan ts => $"'{ts}'",
+                Guid guid => $"'{guid}'",
+                byte[] bytes => $"0x{Convert.ToHexString(bytes)}",
+                _ => $"'{value?.ToString()?.Replace("'", "''") ?? "NULL"}'"
+            };
         }
 
         private static void AddParametersToCommand(DbCommand command, Dictionary<string, object?> parameters)

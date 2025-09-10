@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net7.0;net6.0</TargetFrameworks>
     <PackageId>EFCore.QueryAnalyzer</PackageId>
-    <PackageVersion>1.1.0</PackageVersion>
+    <PackageVersion>0.0.1-beta04</PackageVersion>
     <Title>EF Core Query Performance Analyzer</Title>
     <Description>A performance monitoring package for Entity Framework Core that tracks slow queries, execution times, and provides detailed analytics for query optimization.</Description>
     <Authors>Akhmad Khasan</Authors>

@@ -172,6 +172,9 @@ namespace EFCore.QueryAnalyzer.Core
             {
                 _logger.LogWarning(ex, "Error extracting parameters from command");
             }
+
+            _logger.LogTrace("Extracted parameters from command {Parameters}", string.Join(", ", parameters.Select(kv => $"{kv.Key}={kv.Value}")));
+
             return parameters;
         }
 
