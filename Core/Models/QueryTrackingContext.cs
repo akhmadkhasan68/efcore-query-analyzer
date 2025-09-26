@@ -17,6 +17,8 @@ namespace EFCore.QueryAnalyzer.Core.Models
         public TimeSpan ExecutionTime { get; set; }
         public Stopwatch Stopwatch { get; set; } = new();
         public string[]? StackTrace { get; set; }
+        public bool StackTraceCaptured { get; set; }
+        public string? StackTraceSource { get; set; } // "Environment", "CallerInfo", "Manual", etc.
         public Guid ConnectionId { get; set; }
         public string ContextType { get; set; } = string.Empty;
         public Guid CommandId { get; set; }

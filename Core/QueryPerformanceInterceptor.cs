@@ -82,6 +82,28 @@ namespace EFCore.QueryAnalyzer.Core
         {
             try
             {
+                string[] stackTrace;
+                bool stackTraceCaptured;
+                string stackTraceSource;
+
+                if (_options.CaptureStackTrace)
+                {
+                    // Fallback to Environment.StackTrace (potential race conditions)
+                    stackTrace = CaptureFilteredStackTrace() ?? [];
+                    stackTraceCaptured = stackTrace.Length > 0;
+                    stackTraceSource = "Environment";
+
+                    _logger.LogDebug("Query tracking using Environment.StackTrace - potential race condition (Thread: {ThreadId}, Captured: {Captured})",
+                        Environment.CurrentManagedThreadId, stackTraceCaptured);
+                }
+                else
+                {
+                    // Stack trace capture disabled
+                    stackTrace = [];
+                    stackTraceCaptured = false;
+                    stackTraceSource = "Disabled";
+                }
+
                 var context = new QueryTrackingContext
                 {
                     QueryId = Guid.NewGuid(),
@@ -89,16 +111,28 @@ namespace EFCore.QueryAnalyzer.Core
                     Parameters = ExtractParameters(command),
                     StartTime = DateTime.UtcNow,
                     Stopwatch = Stopwatch.StartNew(),
-                    StackTrace = _options.CaptureStackTrace ? CaptureFilteredStackTrace() : null,
+                    StackTrace = stackTrace,
+                    StackTraceCaptured = stackTraceCaptured,
+                    StackTraceSource = stackTraceSource,
                     ConnectionId = eventData.ConnectionId,
                     ContextType = eventData.Context?.GetType().FullName ?? "Unknown",
                     CommandId = eventData.CommandId,
                     Connection = command.Connection,
-                    DbContext = eventData.Context // Store the DbContext to access connection string
+                    DbContext = eventData.Context
                 };
 
                 _activeQueries[context.QueryId] = context;
 
+                // Debug log for missing stack traces
+                if (_options.CaptureStackTrace && !stackTraceCaptured)
+                {
+                    _logger.LogWarning("Stack trace capture failed for query on thread {ThreadId}. " +
+                        "Query: {Query}. Source: {Source}. Active queries: {ActiveCount}",
+                        Environment.CurrentManagedThreadId,
+                        TruncateForLog(command.CommandText, 100),
+                        stackTraceSource,
+                        _activeQueries.Count);
+                }
             }
             catch (Exception ex)
             {
@@ -110,9 +144,10 @@ namespace EFCore.QueryAnalyzer.Core
         {
             try
             {
-                var matchingContext = _activeQueries.Values
-                    .FirstOrDefault(ctx => ctx.ConnectionId == eventData.ConnectionId &&
-                                          ctx.CommandId == eventData.CommandId);
+                var matchingContext = _activeQueries.Values.FirstOrDefault(ctx =>
+                {
+                    return ctx.ConnectionId == eventData.ConnectionId && ctx.CommandId == eventData.CommandId;
+                });
 
                 if (matchingContext == null)
                 {
@@ -129,15 +164,26 @@ namespace EFCore.QueryAnalyzer.Core
                 // Check if execution time exceeds threshold
                 if (matchingContext.ExecutionTime.TotalMilliseconds >= _options.ThresholdMilliseconds)
                 {
-                    _logger.LogWarning("Slow query detected: {Duration}ms (Threshold: {Threshold}ms) - Query: {Query}",
+                    _logger.LogWarning("Slow query detected: {Duration}ms (Threshold: {Threshold}ms) - " +
+                        "Query: {Query} - Stack trace captured: {StackTraceCaptured} via {Source}",
                         matchingContext.ExecutionTime.TotalMilliseconds,
                         _options.ThresholdMilliseconds,
-                        TruncateForLog(matchingContext.CommandText, 200));
+                        TruncateForLog(matchingContext.CommandText, 200),
+                        matchingContext.StackTraceCaptured,
+                        matchingContext.StackTraceSource);
 
                     // Enqueue for background processing - this is ultra-fast and non-blocking
                     // The background service will handle execution plan capture and reporting
                     _queue.Enqueue(matchingContext);
-
+                }
+                else
+                {
+                    // Debug log for successful queries with stack trace info
+                    _logger.LogDebug("Query completed: {Duration}ms - Stack trace: {StackTraceCaptured} via {Source} (Thread: {ThreadId})",
+                        matchingContext.ExecutionTime.TotalMilliseconds,
+                        matchingContext.StackTraceCaptured,
+                        matchingContext.StackTraceSource,
+                        Environment.CurrentManagedThreadId);
                 }
 
                 return Task.CompletedTask;
@@ -169,13 +215,13 @@ namespace EFCore.QueryAnalyzer.Core
             return parameters;
         }
 
-        private string[]? CaptureFilteredStackTrace()
+        private string[] CaptureFilteredStackTrace()
         {
             try
             {
                 var stackTrace = Environment.StackTrace;
                 if (string.IsNullOrEmpty(stackTrace))
-                    return null;
+                    return [];
 
                 var projectRoot = FindProjectRoot();
 
@@ -184,19 +230,20 @@ namespace EFCore.QueryAnalyzer.Core
                     .Select(line => line.Trim())
                     .Where(line => IsApplicationCode(line, projectRoot))
                     .Take(_options.MaxStackTraceLines)
-                    .Select(line => ConvertToRelativePath(line))
+                    .Select(ConvertToRelativePath)
                     .Where(line => !string.IsNullOrEmpty(line))
                     .Distinct() // Remove duplicate entries
                     .ToArray();
 
                 // Return null if no meaningful application code found
-                return lines.Length > 0 ? lines : null;
+                return lines.Length > 0 ? lines : [];
             }
             catch (Exception ex)
             {
                 // Log warning for stack trace capture issues (kept minimal for production)
                 _logger.LogWarning(ex, "Error capturing filtered stack trace for query analysis");
-                return null;
+
+                return [];
             }
         }
 
