@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace EFCore.QueryAnalyzer.Core
 {
@@ -13,12 +14,41 @@ namespace EFCore.QueryAnalyzer.Core
     public sealed class QueryPerformanceInterceptor(
         ILogger<QueryPerformanceInterceptor> logger,
         QueryAnalysisQueue queue,
-        QueryAnalyzerOptions options) : DbCommandInterceptor
+        QueryAnalyzerOptions options
+        ) : DbCommandInterceptor
     {
         private readonly ILogger<QueryPerformanceInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         private readonly QueryAnalysisQueue _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         private readonly QueryAnalyzerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
         private readonly ConcurrentDictionary<Guid, QueryTrackingContext> _activeQueries = new();
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result
+        )
+        {
+            if (_options.IsEnabled)
+            {
+                StartQueryTracking(command, eventData);
+            }
+
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override DbDataReader ReaderExecuted(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result
+        )
+        {
+            if (_options.IsEnabled)
+            {
+                _ = Task.Run(async () => await EndQueryTrackingAsync(eventData, CancellationToken.None));
+            }
+
+            return base.ReaderExecuted(command, eventData, result);
+        }
 
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
@@ -35,20 +65,6 @@ namespace EFCore.QueryAnalyzer.Core
             return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
 
-        public override InterceptionResult<DbDataReader> ReaderExecuting(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<DbDataReader> result
-        )
-        {
-            if (_options.IsEnabled)
-            {
-                StartQueryTracking(command, eventData);
-            }
-
-            return base.ReaderExecuting(command, eventData, result);
-        }
-
         public override async ValueTask<DbDataReader> ReaderExecutedAsync(
             DbCommand command,
             CommandExecutedEventData eventData,
@@ -58,50 +74,92 @@ namespace EFCore.QueryAnalyzer.Core
         {
             if (_options.IsEnabled)
             {
-                await EndQueryTrackingAsync(command, eventData, cancellationToken);
+                await EndQueryTrackingAsync(eventData, cancellationToken);
             }
 
             return await base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
         }
 
-        public override DbDataReader ReaderExecuted(
+        public override InterceptionResult<int> NonQueryExecuting(
             DbCommand command,
-            CommandExecutedEventData eventData,
-            DbDataReader result
+            CommandEventData eventData,
+            InterceptionResult<int> result
         )
         {
             if (_options.IsEnabled)
             {
-                _ = Task.Run(async () => await EndQueryTrackingAsync(command, eventData, CancellationToken.None));
+                StartQueryTracking(command, eventData);
             }
 
-            return base.ReaderExecuted(command, eventData, result);
+            return base.NonQueryExecuting(command, eventData, result);
         }
 
+        public override int NonQueryExecuted(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            int result
+        )
+        {
+            if (_options.IsEnabled)
+            {
+                _ = Task.Run(async () => await EndQueryTrackingAsync(eventData, CancellationToken.None));
+            }
+
+            return base.NonQueryExecuted(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (_options.IsEnabled)
+            {
+                StartQueryTracking(command, eventData);
+            }
+
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override async ValueTask<int> NonQueryExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (_options.IsEnabled)
+            {
+                await EndQueryTrackingAsync(eventData, cancellationToken);
+            }
+
+            return await base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private void StartQueryTracking(DbCommand command, CommandEventData eventData)
         {
+            _logger.LogInformation("Start tracking query - thread {ThreadId} - connection {ConnectionId} - timestamp {Timestamp} - command text: {CommandText}",
+                Environment.CurrentManagedThreadId,
+                eventData.ConnectionId,
+                DateTime.UtcNow.ToString("o"),
+                command.CommandText);
             try
             {
                 string[] stackTrace;
-                bool stackTraceCaptured;
-                string stackTraceSource;
+                var stackTraceCaptured = false;
 
                 if (_options.CaptureStackTrace)
                 {
-                    // Fallback to Environment.StackTrace (potential race conditions)
-                    stackTrace = CaptureFilteredStackTrace() ?? [];
+                    stackTrace = CaptureStackTrace() ?? [];
                     stackTraceCaptured = stackTrace.Length > 0;
-                    stackTraceSource = "Environment";
-
-                    _logger.LogDebug("Query tracking using Environment.StackTrace - potential race condition (Thread: {ThreadId}, Captured: {Captured})",
-                        Environment.CurrentManagedThreadId, stackTraceCaptured);
                 }
                 else
                 {
                     // Stack trace capture disabled
                     stackTrace = [];
-                    stackTraceCaptured = false;
-                    stackTraceSource = "Disabled";
                 }
 
                 var context = new QueryTrackingContext
@@ -112,8 +170,6 @@ namespace EFCore.QueryAnalyzer.Core
                     StartTime = DateTime.UtcNow,
                     Stopwatch = Stopwatch.StartNew(),
                     StackTrace = stackTrace,
-                    StackTraceCaptured = stackTraceCaptured,
-                    StackTraceSource = stackTraceSource,
                     ConnectionId = eventData.ConnectionId,
                     ContextType = eventData.Context?.GetType().FullName ?? "Unknown",
                     CommandId = eventData.CommandId,
@@ -127,11 +183,9 @@ namespace EFCore.QueryAnalyzer.Core
                 if (_options.CaptureStackTrace && !stackTraceCaptured)
                 {
                     _logger.LogWarning("Stack trace capture failed for query on thread {ThreadId}. " +
-                        "Query: {Query}. Source: {Source}. Active queries: {ActiveCount}",
+                        "Query: {Query}.",
                         Environment.CurrentManagedThreadId,
-                        TruncateForLog(command.CommandText, 100),
-                        stackTraceSource,
-                        _activeQueries.Count);
+                        TruncateForLog(command.CommandText, 100));
                 }
             }
             catch (Exception ex)
@@ -140,7 +194,8 @@ namespace EFCore.QueryAnalyzer.Core
             }
         }
 
-        private Task EndQueryTrackingAsync(DbCommand command, CommandExecutedEventData eventData, CancellationToken cancellationToken)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private Task EndQueryTrackingAsync(CommandExecutedEventData eventData, CancellationToken cancellationToken)
         {
             try
             {
@@ -165,12 +220,10 @@ namespace EFCore.QueryAnalyzer.Core
                 if (matchingContext.ExecutionTime.TotalMilliseconds >= _options.ThresholdMilliseconds)
                 {
                     _logger.LogWarning("Slow query detected: {Duration}ms (Threshold: {Threshold}ms) - " +
-                        "Query: {Query} - Stack trace captured: {StackTraceCaptured} via {Source}",
+                        "Query: {Query}",
                         matchingContext.ExecutionTime.TotalMilliseconds,
                         _options.ThresholdMilliseconds,
-                        TruncateForLog(matchingContext.CommandText, 200),
-                        matchingContext.StackTraceCaptured,
-                        matchingContext.StackTraceSource);
+                        TruncateForLog(matchingContext.CommandText, 200));
 
                     // Enqueue for background processing - this is ultra-fast and non-blocking
                     // The background service will handle execution plan capture and reporting
@@ -179,10 +232,8 @@ namespace EFCore.QueryAnalyzer.Core
                 else
                 {
                     // Debug log for successful queries with stack trace info
-                    _logger.LogDebug("Query completed: {Duration}ms - Stack trace: {StackTraceCaptured} via {Source} (Thread: {ThreadId})",
+                    _logger.LogDebug("Query completed: {Duration}ms - (Thread: {ThreadId})",
                         matchingContext.ExecutionTime.TotalMilliseconds,
-                        matchingContext.StackTraceCaptured,
-                        matchingContext.StackTraceSource,
                         Environment.CurrentManagedThreadId);
                 }
 
@@ -215,7 +266,8 @@ namespace EFCore.QueryAnalyzer.Core
             return parameters;
         }
 
-        private string[] CaptureFilteredStackTrace()
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private string[] CaptureStackTrace()
         {
             try
             {

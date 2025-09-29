@@ -16,13 +16,12 @@ namespace EFCore.QueryAnalyzer.Core.Models
         public DateTime EndTime { get; set; }
         public TimeSpan ExecutionTime { get; set; }
         public Stopwatch Stopwatch { get; set; } = new();
-        public string[]? StackTrace { get; set; }
-        public bool StackTraceCaptured { get; set; }
-        public string? StackTraceSource { get; set; } // "Environment", "CallerInfo", "Manual", etc.
+        public string[] StackTrace { get; set; } = [];
         public Guid ConnectionId { get; set; }
         public string ContextType { get; set; } = string.Empty;
         public Guid CommandId { get; set; }
-
+        public long SequenceNumber { get; set; }
+        public int ThreadId { get; set; }
 
         // SQL Server execution plan analysis properties
         public DbConnection? Connection { get; set; }

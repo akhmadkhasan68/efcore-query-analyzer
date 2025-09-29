@@ -148,6 +148,87 @@ namespace EFCore.QueryAnalyzer.Extensions
             return AddEFCoreQueryAnalyzerCore(services, registerDefaultReportingService: false);
         }
 
+        /// <summary>
+        /// Adds EF Core Query Analyzer for DbContext pooling with default HTTP reporting
+        /// </summary>
+        /// <param name="services">The service collection</param>
+        /// <param name="configureOptions">The options configuration delegate</param>
+        /// <returns>The service collection for chaining</returns>
+        public static IServiceCollection AddEFCoreQueryAnalyzerForPool(
+            this IServiceCollection services,
+            Action<QueryAnalyzerOptions>? configureOptions = null)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+
+            if (configureOptions != null)
+            {
+                services.Configure(configureOptions);
+            }
+            else
+            {
+                services.Configure<QueryAnalyzerOptions>(_ => { });
+            }
+
+            return AddEFCoreQueryAnalyzerCore(services, registerDefaultReportingService: true);
+        }
+
+        /// <summary>
+        /// Adds EF Core Query Analyzer for DbContext pooling with HTTP reporting service
+        /// </summary>
+        /// <param name="services">The service collection</param>
+        /// <param name="configureOptions">The options configuration delegate</param>
+        /// <param name="configureHttpClient">Optional HTTP client configuration</param>
+        /// <returns>The service collection for chaining</returns>
+        public static IServiceCollection AddEFCoreQueryAnalyzerForPoolWithHttp(
+            this IServiceCollection services,
+            Action<QueryAnalyzerOptions> configureOptions,
+            Action<HttpClient>? configureHttpClient = null)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentNullException.ThrowIfNull(configureOptions);
+
+            services.Configure(configureOptions);
+
+            // Add HTTP client for reporting service
+            var httpClientBuilder = services.AddHttpClient<HttpQueryReportingService>();
+            if (configureHttpClient != null)
+            {
+                httpClientBuilder.ConfigureHttpClient(configureHttpClient);
+            }
+
+            // Replace default reporting service with HTTP implementation
+            services.Replace(ServiceDescriptor.Transient<IQueryReportingService, HttpQueryReportingService>());
+
+            return AddEFCoreQueryAnalyzerCore(services, registerDefaultReportingService: false);
+        }
+
+        /// <summary>
+        /// Adds EF Core Query Analyzer for DbContext pooling with in-memory reporting service
+        /// </summary>
+        /// <param name="services">The service collection</param>
+        /// <param name="configureOptions">The options configuration delegate</param>
+        /// <returns>The service collection for chaining</returns>
+        public static IServiceCollection AddEFCoreQueryAnalyzerForPoolWithInMemory(
+            this IServiceCollection services,
+            Action<QueryAnalyzerOptions>? configureOptions = null)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+
+            if (configureOptions != null)
+            {
+                services.Configure(configureOptions);
+            }
+            else
+            {
+                services.Configure<QueryAnalyzerOptions>(_ => { });
+            }
+
+            // Replace default reporting service with in-memory implementation
+            services.Replace(ServiceDescriptor.Singleton<IQueryReportingService, InMemoryQueryReportingService>());
+
+            return AddEFCoreQueryAnalyzerCore(services, registerDefaultReportingService: false);
+        }
+
         private static IServiceCollection AddEFCoreQueryAnalyzerCore(IServiceCollection services, bool registerDefaultReportingService = true)
         {
             // Register options resolver
@@ -165,7 +246,7 @@ namespace EFCore.QueryAnalyzer.Extensions
             services.TryAddSingleton<QueryAnalysisQueue>();
             services.AddHostedService<QueryAnalysisBackgroundService>();
 
-            // Register the interceptor with queue injection instead of reporting service
+            // Register the interceptor with all dependencies including caller storage
             services.TryAddTransient(provider =>
                 new QueryPerformanceInterceptor(
                     provider.GetRequiredService<ILogger<QueryPerformanceInterceptor>>(),
@@ -360,6 +441,48 @@ namespace EFCore.QueryAnalyzer.Extensions
             var serviceProvider = services.BuildServiceProvider();
             var interceptor = serviceProvider.GetRequiredService<QueryPerformanceInterceptor>();
 
+            return optionsBuilder.AddInterceptors(interceptor);
+        }
+
+        /// <summary>
+        /// Adds the query performance interceptor for DbContext pooling (shared singleton interceptor)
+        /// </summary>
+        /// <typeparam name="TContext">The DbContext type</typeparam>
+        /// <param name="optionsBuilder">The DbContext options builder</param>
+        /// <param name="serviceProvider">The service provider to resolve the interceptor</param>
+        /// <returns>The options builder for chaining</returns>
+        public static DbContextOptionsBuilder<TContext> AddQueryAnalyzerForPool<TContext>(
+            this DbContextOptionsBuilder<TContext> optionsBuilder,
+            IServiceProvider serviceProvider)
+            where TContext : DbContext
+        {
+            ArgumentNullException.ThrowIfNull(optionsBuilder);
+            ArgumentNullException.ThrowIfNull(serviceProvider);
+
+            var interceptor = serviceProvider.GetRequiredService<QueryPerformanceInterceptor>();
+            return optionsBuilder.AddInterceptors(interceptor);
+        }
+    }
+
+    /// <summary>
+    /// Extension methods for non-generic DbContextOptionsBuilder with pooling support
+    /// </summary>
+    public static class DbContextOptionsBuilderPoolExtensions
+    {
+        /// <summary>
+        /// Adds the query performance interceptor for DbContext pooling (shared singleton interceptor)
+        /// </summary>
+        /// <param name="optionsBuilder">The DbContext options builder</param>
+        /// <param name="serviceProvider">The service provider to resolve the interceptor</param>
+        /// <returns>The options builder for chaining</returns>
+        public static DbContextOptionsBuilder AddQueryAnalyzerForPool(
+            this DbContextOptionsBuilder optionsBuilder,
+            IServiceProvider serviceProvider)
+        {
+            ArgumentNullException.ThrowIfNull(optionsBuilder);
+            ArgumentNullException.ThrowIfNull(serviceProvider);
+
+            var interceptor = serviceProvider.GetRequiredService<QueryPerformanceInterceptor>();
             return optionsBuilder.AddInterceptors(interceptor);
         }
     }
