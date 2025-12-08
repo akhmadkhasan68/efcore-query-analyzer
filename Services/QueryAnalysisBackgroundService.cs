@@ -93,6 +93,8 @@ namespace EFCore.QueryAnalyzer.Services
                     }
                 }
 
+                _logger.LogInformation("Processing queued query analysis for QueryId: {QueryId}", context.QueryId);
+
                 await reportingService.ReportSlowQueryAsync(context, cancellationToken);
 
             }
@@ -360,7 +362,7 @@ namespace EFCore.QueryAnalyzer.Services
             }
         }
 
-        private static string SubstituteParametersWithLiterals(string commandText, Dictionary<string, object?> parameters)
+        private string SubstituteParametersWithLiterals(string commandText, Dictionary<string, object?> parameters)
         {
             if (parameters == null || parameters.Count == 0)
                 return commandText;
@@ -374,7 +376,7 @@ namespace EFCore.QueryAnalyzer.Services
 
                 // Handle both @parameter and ? parameter formats
                 var literalValue = ConvertToSqlLiteral(parameterValue);
-                
+
                 // Replace @parameterName with literal value
                 if (parameterName.StartsWith("@"))
                 {
@@ -386,6 +388,8 @@ namespace EFCore.QueryAnalyzer.Services
                     result = result.Replace($"@{parameterName}", literalValue);
                 }
             }
+
+            _logger.LogInformation("Substituted command text for execution plan capture: {CommandText}", result);
 
             return result;
         }

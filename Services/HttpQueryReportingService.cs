@@ -39,11 +39,8 @@ namespace EFCore.QueryAnalyzer.Services
 
         public async Task ReportSlowQueryAsync(QueryTrackingContext context, CancellationToken cancellationToken = default)
         {
-            // Check if reporting should be enabled for current environment
-            if (!ShouldReport())
-            {
-                return;
-            }
+            _logger.LogInformation("Reporting slow query: {QueryId} ({Duration}ms)",
+                context.QueryId, context.ExecutionTime.TotalMilliseconds);
 
             if (string.IsNullOrEmpty(_options.ApiEndpoint))
             {
@@ -67,17 +64,6 @@ namespace EFCore.QueryAnalyzer.Services
             {
                 _logger.LogError(ex, "Failed to report slow query: {QueryId}", context.QueryId);
             }
-        }
-
-        private bool ShouldReport()
-        {
-            var environment = _hostEnvironment?.EnvironmentName ??
-                             Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ??
-                             "Production";
-
-            return environment.Equals("Development", StringComparison.OrdinalIgnoreCase)
-                ? _options.EnableInDevelopment
-                : _options.EnableInProduction;
         }
 
         private SlowQueryReport CreateReport(QueryTrackingContext context)

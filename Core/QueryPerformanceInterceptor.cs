@@ -80,64 +80,6 @@ namespace EFCore.QueryAnalyzer.Core
             return await base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
         }
 
-        public override InterceptionResult<int> NonQueryExecuting(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result
-        )
-        {
-            if (_options.IsEnabled)
-            {
-                StartQueryTracking(command, eventData);
-            }
-
-            return base.NonQueryExecuting(command, eventData, result);
-        }
-
-        public override int NonQueryExecuted(
-            DbCommand command,
-            CommandExecutedEventData eventData,
-            int result
-        )
-        {
-            if (_options.IsEnabled)
-            {
-                _ = Task.Run(async () => await EndQueryTrackingAsync(eventData, CancellationToken.None));
-            }
-
-            return base.NonQueryExecuted(command, eventData, result);
-        }
-
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
-            DbCommand command,
-            CommandEventData eventData,
-            InterceptionResult<int> result,
-            CancellationToken cancellationToken = default
-        )
-        {
-            if (_options.IsEnabled)
-            {
-                StartQueryTracking(command, eventData);
-            }
-
-            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
-        }
-
-        public override async ValueTask<int> NonQueryExecutedAsync(
-            DbCommand command,
-            CommandExecutedEventData eventData,
-            int result,
-            CancellationToken cancellationToken = default
-        )
-        {
-            if (_options.IsEnabled)
-            {
-                await EndQueryTrackingAsync(eventData, cancellationToken);
-            }
-
-            return await base.NonQueryExecutedAsync(command, eventData, result, cancellationToken);
-        }
-
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void StartQueryTracking(DbCommand command, CommandEventData eventData)
         {

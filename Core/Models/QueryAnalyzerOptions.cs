@@ -11,9 +11,9 @@ namespace EFCore.QueryAnalyzer.Core.Models
         public double ThresholdMilliseconds { get; set; } = 1000;
 
         /// <summary>
-        /// Whether the analyzer is enabled (default: true)
+        /// Whether the analyzer is enabled (default: false)
         /// </summary>
-        public bool IsEnabled { get; set; } = true;
+        public bool IsEnabled { get; set; } = false;
 
         /// <summary>
         /// Whether to capture stack traces for slow queries (default: true)
@@ -64,17 +64,6 @@ namespace EFCore.QueryAnalyzer.Core.Models
         /// Timeout for API calls in milliseconds (default: 5000ms)
         /// </summary>
         public int ApiTimeoutMs { get; set; } = 5000;
-
-        /// <summary>
-        /// Whether to enable reporting in development environment (default: true)
-        /// </summary>
-        public bool EnableInDevelopment { get; set; } = true;
-
-        /// <summary>
-        /// Whether to enable reporting in production environment (default: false)
-        /// </summary>
-        public bool EnableInProduction { get; set; } = false;
-
         // ===================== //
 
         /// <summary>

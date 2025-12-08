@@ -64,14 +64,13 @@ var app = builder.Build();
 ```json
 {
   "QueryAnalyzer": {
+    "IsEnabled": true,
     "ThresholdMilliseconds": 1000,
     "ApiEndpoint": "https://your-monitoring-api.com/slow-queries",
     "ApiKey": "your-secret-api-key",
     "ProjectId": "my-application",
     "CaptureStackTrace": true,
     "CaptureExecutionPlan": true,
-    "EnableInDevelopment": true,
-    "EnableInProduction": false
   }
 }
 ```
@@ -83,7 +82,7 @@ That's it! The analyzer will now monitor your queries and report slow ones autom
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `ThresholdMilliseconds` | `double` | `1000` | Threshold in milliseconds for slow query detection |
-| `IsEnabled` | `bool` | `true` | Whether the analyzer is enabled |
+| `IsEnabled` | `bool` | `false` | Whether the analyzer is enabled |
 | `CaptureStackTrace` | `bool` | `true` | Capture stack traces for slow queries |
 | `CaptureExecutionPlan` | `bool` | `false` | Capture database execution plans |
 | `MaxStackTraceLines` | `int` | `20` | Maximum lines in captured stack traces |
@@ -92,8 +91,6 @@ That's it! The analyzer will now monitor your queries and report slow ones autom
 | `ApiKey` | `string?` | `null` | API key for authentication |
 | `ProjectId` | `string?` | `null` | Project identifier sent as X-PROJECT-ID header |
 | `ApiTimeoutMs` | `int` | `5000` | API request timeout in milliseconds |
-| `EnableInDevelopment` | `bool` | `true` | Enable reporting in development |
-| `EnableInProduction` | `bool` | `false` | Enable reporting in production |
 | `DatabaseProvider` | `DatabaseProvider` | `Auto` | Database provider for execution plans |
 | `ExecutionPlanTimeoutSeconds` | `int` | `30` | Timeout for execution plan capture |
 | `ConnectionString` | `string?` | `null` | Connection string for execution plan capture |
@@ -108,10 +105,10 @@ That's it! The analyzer will now monitor your queries and report slow ones autom
 builder.Services.AddEFCoreQueryAnalyzerWithHttp(
     options =>
     {
+        options.IsEnabled = true
         options.ThresholdMilliseconds = 500;
         options.ApiEndpoint = "https://monitoring.company.com/api/queries";
         options.ApiKey = builder.Configuration["MonitoringApiKey"];
-        options.EnableInProduction = true;
     },
     httpClient =>
     {
@@ -129,6 +126,7 @@ builder.Services.AddEFCoreQueryAnalyzerWithHttp(
     options =>
     {
         // Basic configuration
+        options.IsEnabled = true,
         options.ApiEndpoint = "https://monitoring.company.com/api/slow-queries";
         options.ApiKey = builder.Configuration["MonitoringApiKey"];
         
@@ -140,7 +138,6 @@ builder.Services.AddEFCoreQueryAnalyzerWithHttp(
         options.ThresholdMilliseconds = 500;
         
         // Production settings
-        options.EnableInProduction = true;
         options.CaptureExecutionPlan = true;
     },
     httpClient =>
@@ -441,8 +438,6 @@ builder.Services.AddEFCoreQueryAnalyzer(options =>
     {
         options.ThresholdMilliseconds = 2000;
         options.CaptureStackTrace = false;
-        options.EnableInProduction = builder.Configuration
-            .GetValue<bool>("EnableQueryAnalyzerInProduction");
     }
 });
 ```
@@ -542,7 +537,6 @@ With built-in queue processing, you can now confidently enable the analyzer in p
 // Production-safe configuration with zero performance impact
 builder.Services.AddEFCoreQueryAnalyzer(options =>
 {
-    options.EnableInProduction = true;  // Safe with queue processing!
     options.ThresholdMilliseconds = 1000;
     options.CaptureExecutionPlan = true;  // Even heavy operations are safe
     options.ApiEndpoint = "https://monitoring.company.com/api/queries";
@@ -558,15 +552,7 @@ options.MaxStackTraceLines = 5;         // Reduce overhead
 options.ExecutionPlanTimeoutSeconds = 15; // Prevent hanging in background
 ```
 
-### 3. Environment Detection
-
-```csharp
-// Use environment-specific settings
-options.EnableInDevelopment = true;   // Debug in development
-options.EnableInProduction = true;    // Now safe for production!
-```
-
-### 4. Background Processing Benefits
+### 3. Background Processing Benefits
 
 The built-in queue processing means you can:
 
@@ -574,7 +560,7 @@ The built-in queue processing means you can:
 - **Use lower thresholds** - Catch more issues without slowdowns
 - **Enable detailed stack traces** - Background processing handles the overhead
 
-### 5. Production-Ready Logging
+### 4. Production-Ready Logging
 
 EFCore.QueryAnalyzer has been optimized for production environments with minimal logging overhead:
 
@@ -658,7 +644,6 @@ Assert.Contains(reports, r => r.RawQuery.Contains("Users"));
 
 | Issue | Cause | Solution |
 |-------|--------|----------|
-| No reports generated | Reporting disabled for environment | Check `EnableInDevelopment`/`EnableInProduction` |
 | API authentication errors | Invalid API key | Verify `ApiKey` configuration |
 | Missing stack traces | Stack trace capture disabled | Set `CaptureStackTrace = true` |
 | High memory usage | Large query texts/stack traces | Reduce `MaxQueryLength` and `MaxStackTraceLines` |
@@ -735,13 +720,13 @@ Enable detailed logging to diagnose issues:
 ```json
 {
   "QueryAnalyzer": {
+    "IsEnabled": true,
     "ThresholdMilliseconds": 1000,
     "ApiEndpoint": "https://monitoring.company.com/api/slow-queries",
     "ApiKey": "prod-api-key-here",
     "ProjectId": "my-production-app",
     "CaptureStackTrace": true,
     "CaptureExecutionPlan": true,
-    "EnableInProduction": true,
     "ApiTimeoutMs": 10000,
     "DatabaseProvider": "SqlServer",
     "ConnectionString": "Server=prod-server;Database=MyApp;Integrated Security=true;",
