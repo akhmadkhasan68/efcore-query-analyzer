@@ -1,4 +1,5 @@
 using EFCore.QueryAnalyzer.Core.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
@@ -21,6 +22,12 @@ namespace EFCore.QueryAnalyzer.Core
         private readonly QueryAnalysisQueue _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         private readonly QueryAnalyzerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
         private readonly ConcurrentDictionary<Guid, QueryTrackingContext> _activeQueries = new();
+
+        // AsyncLocal to preserve stack trace across async boundaries (per async flow)
+        private static readonly AsyncLocal<string[]?> _asyncStackTrace = new();
+
+        // DbContext-based caching using ConditionalWeakTable (auto-cleanup, safe for pooling)
+        private static readonly ConditionalWeakTable<DbContext, string[]> _dbContextStackTraceCache = new();
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(
             DbCommand command,
@@ -93,10 +100,79 @@ namespace EFCore.QueryAnalyzer.Core
                 string[] stackTrace;
                 var stackTraceCaptured = false;
 
-                if (_options.CaptureStackTrace)
+                if (_options.CaptureStackTrace && eventData.Context != null)
                 {
+                    var dbContext = eventData.Context;
+
+                    // Multi-strategy caching:
+                    // 1. Try fresh capture first (preferred - ensures correctness for each request)
+                    // 2. Fall back to AsyncLocal (works for async continuations in same request)
+                    // 3. Fall back to DbContext cache (last resort for pooled contexts)
+
+                    // Try fresh capture
+                    var freshTrace = CaptureStackTrace() ?? [];
+                    bool capturedFresh = freshTrace.Length > 0;
+
+                    // DIAGNOSTIC: Log state
+                    _logger.LogInformation("Stack trace capture - Fresh:{FreshCount}, AsyncLocal:{AsyncCount}, DbContext:{HasDbContext}, Thread:{ThreadId}",
+                        freshTrace.Length,
+                        _asyncStackTrace.Value?.Length ?? -1,
+                        _dbContextStackTraceCache.TryGetValue(dbContext, out _),
+                        Environment.CurrentManagedThreadId);
+
+                    if (capturedFresh)
+                    {
+                        // Fresh capture succeeded - use it and update all caches
+                        // This ensures each new request gets its own stack trace
+                        stackTrace = freshTrace;
+                        stackTraceCaptured = true;
+
+                        _asyncStackTrace.Value = freshTrace;
+                        _dbContextStackTraceCache.AddOrUpdate(dbContext, freshTrace);
+
+                        _logger.LogInformation("✓ Fresh stack trace captured and cached ({Count} frames)", freshTrace.Length);
+                    }
+                    else
+                    {
+                        // Fresh capture failed - try caches (async continuation scenario)
+                        var asyncTrace = _asyncStackTrace.Value;
+
+                        if (asyncTrace != null && asyncTrace.Length > 0)
+                        {
+                            // Use AsyncLocal cache
+                            stackTrace = asyncTrace;
+                            stackTraceCaptured = true;
+                            _logger.LogInformation("✓ Reusing stack trace from AsyncLocal ({Count} frames)", asyncTrace.Length);
+                        }
+                        else if (_dbContextStackTraceCache.TryGetValue(dbContext, out var dbContextTrace) && dbContextTrace.Length > 0)
+                        {
+                            // Use DbContext cache as last resort
+                            stackTrace = dbContextTrace;
+                            stackTraceCaptured = true;
+
+                            // Promote to AsyncLocal for this async context
+                            _asyncStackTrace.Value = stackTrace;
+
+                            _logger.LogInformation("✓ Reusing stack trace from DbContext cache ({Count} frames)", dbContextTrace.Length);
+                        }
+                        else
+                        {
+                            // No stack trace available anywhere
+                            stackTrace = [];
+                            _logger.LogWarning("✗ Stack trace capture failed and no cached trace available");
+                        }
+                    }
+                }
+                else if (_options.CaptureStackTrace)
+                {
+                    // DbContext is null - can't use DbContext caching
                     stackTrace = CaptureStackTrace() ?? [];
                     stackTraceCaptured = stackTrace.Length > 0;
+
+                    if (stackTraceCaptured)
+                    {
+                        _asyncStackTrace.Value = stackTrace;
+                    }
                 }
                 else
                 {
@@ -213,24 +289,71 @@ namespace EFCore.QueryAnalyzer.Core
         {
             try
             {
-                var stackTrace = Environment.StackTrace;
-                if (string.IsNullOrEmpty(stackTrace))
-                    return [];
-
+                // Use StackTrace class instead of Environment.StackTrace for better async support
+                var stackTrace = new StackTrace(true); // true = capture file info
                 var projectRoot = FindProjectRoot();
 
-                var lines = stackTrace.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(line => !string.IsNullOrWhiteSpace(line))
-                    .Select(line => line.Trim())
-                    .Where(line => IsApplicationCode(line, projectRoot))
-                    .Take(_options.MaxStackTraceLines)
-                    .Select(ConvertToRelativePath)
-                    .Where(line => !string.IsNullOrEmpty(line))
-                    .Distinct() // Remove duplicate entries
-                    .ToArray();
+                var lines = new List<string>();
 
-                // Return null if no meaningful application code found
-                return lines.Length > 0 ? lines : [];
+                // Iterate through stack frames
+                for (int i = 0; i < stackTrace.FrameCount && lines.Count < _options.MaxStackTraceLines; i++)
+                {
+                    var frame = stackTrace.GetFrame(i);
+                    if (frame == null) continue;
+
+                    var method = frame.GetMethod();
+                    if (method == null) continue;
+
+                    // Build stack trace line similar to Environment.StackTrace format
+                    var declaringType = method.DeclaringType;
+                    var methodName = method.Name;
+
+                    // Skip compiler-generated methods (async state machines, lambdas, etc)
+                    if (methodName.Contains("<") || methodName.Contains(">"))
+                    {
+                        // But preserve the original method name from async state machines
+                        // e.g., <ToPaginationModelAsync>d__5 -> ToPaginationModelAsync
+                        var match = System.Text.RegularExpressions.Regex.Match(methodName, @"<(\w+)>");
+                        if (match.Success)
+                        {
+                            methodName = match.Groups[1].Value;
+                        }
+                        else
+                        {
+                            continue; // Skip other compiler-generated code
+                        }
+                    }
+
+                    var fullMethodName = declaringType != null
+                        ? $"{declaringType.FullName}.{methodName}"
+                        : methodName;
+
+                    // Build the stack trace line
+                    string stackLine;
+                    var fileName = frame.GetFileName();
+                    var lineNumber = frame.GetFileLineNumber();
+
+                    if (!string.IsNullOrEmpty(fileName) && lineNumber > 0)
+                    {
+                        stackLine = $"at {fullMethodName} in {fileName}:line {lineNumber}";
+                    }
+                    else
+                    {
+                        stackLine = $"at {fullMethodName}";
+                    }
+
+                    // Filter using existing logic
+                    if (IsApplicationCode(stackLine, projectRoot))
+                    {
+                        var convertedLine = ConvertToRelativePath(stackLine);
+                        if (!string.IsNullOrEmpty(convertedLine) && !lines.Contains(convertedLine))
+                        {
+                            lines.Add(convertedLine);
+                        }
+                    }
+                }
+
+                return lines.ToArray();
             }
             catch (Exception ex)
             {
